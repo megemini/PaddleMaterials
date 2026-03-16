@@ -353,28 +353,25 @@ class MPNNConv(nn.Layer):
         """
         num_nodes = graph.num_nodes if hasattr(graph, 'num_nodes') else graph.graph.num_nodes
         
-        # Initialize hidden state
-        h = paddle.zeros([1, num_nodes, self.node_out_feats])
-        
+        # Initialize hidden state for GRU: [num_layers=1, num_nodes, node_out_feats]
+        hidden = paddle.zeros([1, num_nodes, self.node_out_feats])
+
         # Message passing for multiple steps
         for step in range(self.num_step_message_passing):
             # Apply GNN layer
             new_h = self.gnn_layer(graph, node_feats, edge_feats)
-            
+
             # Apply layer norm and activation
             new_h = self.layer_norm(new_h)
             new_h = self._get_activation_layer()(new_h)
-            
+
             # Apply dropout
             if self.dropout is not None:
                 new_h = self.dropout(new_h)
-            
+
             # GRU update
             new_h = new_h.unsqueeze(0)  # [1, num_nodes, node_out_feats]
-            h, _ = self.gru(new_h, h)
-            h = h.squeeze(0)  # [num_nodes, node_out_feats]
-            
-            # Update node features for next iteration
-            node_feats = h
-        
+            out, hidden = self.gru(new_h, hidden)
+            node_feats = out.squeeze(0)  # [num_nodes, node_out_feats]
+
         return node_feats
