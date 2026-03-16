@@ -53,6 +53,7 @@ class CanonicalAtomFeaturizer:
         - Mass (1)
         - Valence (one-hot, 5 types)
     """
+    """
     
     def __init__(self):
         """Initialize atom featurizer with allowable feature values."""
@@ -164,7 +165,7 @@ class CanonicalAtomFeaturizer:
         feature[idx] = float(atom.GetMass())
         idx += 1
         
-        # 9. Valence (one-hot, 6)
+        # 9. Valence (one-hot, 5)
         valence = atom.GetTotalValence()
         for i, v in enumerate(self.allowable_valence):
             if valence == v:
