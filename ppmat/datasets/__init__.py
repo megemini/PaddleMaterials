@@ -47,6 +47,8 @@ from ppmat.datasets.num_atom_crystal_dataset import NumAtomsCrystalDataset
 from ppmat.datasets.oc20_s2ef_dataset import OC20S2EFDataset  # noqa
 from ppmat.datasets.qm9_dataset import QM9Dataset # noqa
 from ppmat.datasets.omol25_dataset import OMol25Dataset
+from ppmat.datasets.binary_activity_dataset import BinaryActivityDataset
+from ppmat.datasets.binary_activity_dataset import BinaryActivityDatasetFromSMILES
 from ppmat.datasets.split_mptrj_data import none_to_zero
 from ppmat.datasets.transform import build_transforms
 from ppmat.utils import logger
@@ -67,6 +69,8 @@ __all__ = [
     "DensityDataset", 
     "SmallDensityDataset",
     "OMol25Dataset",
+    "BinaryActivityDataset",
+    "BinaryActivityDatasetFromSMILES",
 ]
 
 INFO_CLASS_REGISTRY: Dict[str, type] = {

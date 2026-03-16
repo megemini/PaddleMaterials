@@ -31,6 +31,13 @@ from ppmat.datasets.custom_data_type import ConcatNumpyWarper
 from ppmat.datasets.geometric_data_type.batch import Batch
 from ppmat.datasets.geometric_data_type.data import Data
 
+# Import MolecularGraph for GDI-NN
+try:
+    from ppmat.models.gdinn.graph_utils import MolecularGraph, batch_graphs
+    MOLECULAR_GRAPH_AVAILABLE = True
+except ImportError:
+    MOLECULAR_GRAPH_AVAILABLE = False
+
 
 class DefaultCollator(object):
     def __call__(self, batch: List[Any]) -> Any:
@@ -82,9 +89,12 @@ class DefaultCollator(object):
             return graphs
         elif isinstance(sample, ConcatData):
             return ConcatData.batch(batch)
+        elif MOLECULAR_GRAPH_AVAILABLE and isinstance(sample, MolecularGraph):
+            # Batch MolecularGraph objects for GDI-NN
+            return batch_graphs(batch)
         raise TypeError(
             "batch data can only contains: paddle.Tensor, numpy.ndarray, "
-            f"dict, list, number, None, pgl.Graph, but got {type(sample)}"
+            f"dict, list, number, None, pgl.Graph, MolecularGraph, but got {type(sample)}"
         )
 
 
