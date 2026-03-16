@@ -79,7 +79,7 @@ class SolvGNN(nn.Layer):
         # Input dimension is hidden_dim + 1 (for composition information)
         self.global_conv = MPNNConv(
             node_in_feats=hidden_dim + 1,
-            edge_in_feats=12,  # Edge feature dimension
+            edge_in_feats=1,  # Edge feature dimension (hb_features has dim=1)
             node_out_feats=hidden_dim,
             edge_hidden_feats=32,
             num_step_message_passing=num_step_message_passing,
