@@ -42,7 +42,9 @@ from ppmat.models.mattersim.m3gnet_graph_converter import M3GNetGraphConvertor
 from ppmat.models.megnet.megnet import MEGNetPlus
 from ppmat.models.infgcn.infgcn import InfGCN
 from ppmat.models.mateno.mateno import MatENO
-from ppmat.models.gdinn.solvgnn import SolvGNN
+from ppmat.models.gdinn.gnn import SolvGNN
+from ppmat.models.gdinn.gnn import SolvGNNxMLP
+from ppmat.models.gdinn.gnn import GEGNN
 
 from ppmat.utils import download
 from ppmat.utils import logger
@@ -70,7 +72,8 @@ __all__ = [
     "InfGCN",
     "MatENO",
     "SolvGNN",
-
+    "SolvGNNxMLP",
+    "GEGNN",
 ]
 
 # Warning: The key of the dictionary must be consistent with the file name of the value

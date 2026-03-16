@@ -323,6 +323,553 @@ def test_training_step():
         return False
 
 
+def test_solvgnn_xmlp_forward():
+    """测试 SolvGNNxMLP 模型前向传播"""
+    print("\n" + "=" * 80)
+    print("测试 SolvGNNxMLP 模型前向传播")
+    print("=" * 80)
+    
+    try:
+        from ppmat.models import SolvGNNxMLP
+        from ppmat.datasets import BinaryActivityDataset
+        from paddle.io import DataLoader, BatchSampler
+        from ppmat.datasets.collate_fn import DefaultCollator
+        
+        # 创建模型
+        model = SolvGNNxMLP(
+            in_dim=75,
+            hidden_dim=64,
+            n_classes=1,
+            mlp_num_hid_layers=2,
+            num_step_message_passing=1,
+            pinn_lambda=1.0
+        )
+
+        print(f"✓ SolvGNNxMLP 模型创建成功")
+        param_count = sum(p.numel().item() for p in model.parameters())
+        print(f"  参数数量: {param_count}")
+
+        # 创建数据加载器
+        dataset = BinaryActivityDataset(
+            data_path='./data/gdinn/train_binary.csv',
+            add_self_loop=True,
+            preload_graphs=False,
+            compute_hb=False
+        )
+
+        sampler = BatchSampler(
+            dataset=dataset,
+            batch_size=32,
+            shuffle=False,
+            drop_last=True
+        )
+        
+        collator = DefaultCollator()
+        dataloader = DataLoader(
+            dataset=dataset,
+            batch_sampler=sampler,
+            num_workers=0,
+            collate_fn=collator
+        )
+        
+        # 测试前向传播
+        for batch_idx, batch in enumerate(dataloader):
+            if batch_idx >= 1:
+                break
+            
+            print(f"\n测试 Batch {batch_idx + 1}...")
+            
+            # 前向传播
+            output = model(batch)
+            
+            print(f"✓ 前向传播成功")
+            print(f"  loss_dict keys: {list(output['loss_dict'].keys())}")
+            print(f"  pred_dict keys: {list(output['pred_dict'].keys())}")
+            print(f"  total_loss: {output['loss_dict']['total_loss'].item():.4f}")
+            print(f"  pred_loss: {output['loss_dict'].get('pred_loss', 0).item():.4f}")
+            print(f"  gd_loss: {output['loss_dict'].get('gd_loss', 0).item():.4f}")
+            print(f"  gamma1 shape: {output['pred_dict']['gamma1'].shape}")
+            print(f"  gamma2 shape: {output['pred_dict']['gamma2'].shape}")
+        
+        print("\n✓ SolvGNNxMLP 模型前向传播测试通过")
+        return True
+        
+    except Exception as e:
+        print(f"\n✗ SolvGNNxMLP 模型前向传播测试失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def test_solvgnn_xmlp_training():
+    """测试 SolvGNNxMLP 模型训练步骤"""
+    print("\n" + "=" * 80)
+    print("测试 SolvGNNxMLP 模型训练步骤")
+    print("=" * 80)
+    
+    try:
+        from ppmat.models import SolvGNNxMLP
+        from ppmat.datasets import BinaryActivityDataset
+        from paddle.io import DataLoader, BatchSampler
+        from ppmat.datasets.collate_fn import DefaultCollator
+        
+        # 创建模型
+        model = SolvGNNxMLP(
+            in_dim=75,
+            hidden_dim=64,
+            n_classes=1,
+            mlp_num_hid_layers=2,
+            num_step_message_passing=1,
+            pinn_lambda=1.0
+        )
+
+        print(f"✓ SolvGNNxMLP 模型创建成功")
+        
+        # 创建数据加载器
+        dataset = BinaryActivityDataset(
+            data_path='./data/gdinn/train_binary.csv',
+            add_self_loop=True,
+            preload_graphs=False,
+            compute_hb=False
+        )
+        
+        sampler = BatchSampler(
+            dataset=dataset,
+            batch_size=32,
+            shuffle=True,
+            drop_last=True
+        )
+        
+        collator = DefaultCollator()
+        dataloader = DataLoader(
+            dataset=dataset,
+            batch_sampler=sampler,
+            num_workers=0,
+            collate_fn=collator
+        )
+        
+        # 创建优化器
+        optimizer = paddle.optimizer.Adam(
+            parameters=model.parameters(),
+            learning_rate=0.001
+        )
+        
+        print(f"✓ 优化器创建成功")
+        
+        # 测试训练步骤
+        model.train()
+        
+        for batch_idx, batch in enumerate(dataloader):
+            if batch_idx >= 3:
+                break
+            
+            # 前向传播
+            output = model(batch)
+            loss = output['loss_dict']['total_loss']
+            
+            # 反向传播
+            loss.backward()
+            
+            # 梯度裁剪
+            paddle.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            
+            # 参数更新
+            optimizer.step()
+            optimizer.clear_grad()
+            
+            print(f"  Step {batch_idx + 1}: Loss = {loss.item():.4f}")
+        
+        print("\n✓ SolvGNNxMLP 训练步骤测试通过")
+        return True
+        
+    except Exception as e:
+        print(f"\n✗ SolvGNNxMLP 训练步骤测试失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def test_gegnn_forward():
+    """测试 GEGNN 模型前向传播"""
+    print("\n" + "=" * 80)
+    print("测试 GEGNN 模型前向传播")
+    print("=" * 80)
+    
+    try:
+        from ppmat.models import GEGNN
+        from ppmat.datasets import BinaryActivityDataset
+        from paddle.io import DataLoader, BatchSampler
+        from ppmat.datasets.collate_fn import DefaultCollator
+        
+        # 创建模型
+        model = GEGNN(
+            in_dim=75,
+            hidden_dim=64,
+            n_classes=1,
+            num_step_message_passing=1,
+            pinn_lambda=1.0
+        )
+
+        print(f"✓ GEGNN 模型创建成功")
+        param_count = sum(p.numel().item() for p in model.parameters())
+        print(f"  参数数量: {param_count}")
+
+        # 创建数据加载器
+        dataset = BinaryActivityDataset(
+            data_path='./data/gdinn/train_binary.csv',
+            add_self_loop=True,
+            preload_graphs=False,
+            compute_hb=False
+        )
+
+        sampler = BatchSampler(
+            dataset=dataset,
+            batch_size=32,
+            shuffle=False,
+            drop_last=True
+        )
+        
+        collator = DefaultCollator()
+        dataloader = DataLoader(
+            dataset=dataset,
+            batch_sampler=sampler,
+            num_workers=0,
+            collate_fn=collator
+        )
+        
+        # 测试前向传播
+        for batch_idx, batch in enumerate(dataloader):
+            if batch_idx >= 1:
+                break
+            
+            print(f"\n测试 Batch {batch_idx + 1}...")
+            
+            # 前向传播
+            output = model(batch)
+            
+            print(f"✓ 前向传播成功")
+            print(f"  loss_dict keys: {list(output['loss_dict'].keys())}")
+            print(f"  pred_dict keys: {list(output['pred_dict'].keys())}")
+            print(f"  total_loss: {output['loss_dict']['total_loss'].item():.4f}")
+            print(f"  pred_loss: {output['loss_dict'].get('pred_loss', 0).item():.4f}")
+            print(f"  gd_loss: {output['loss_dict'].get('gd_loss', 0).item():.4f}")
+            print(f"  gamma1 shape: {output['pred_dict']['gamma1'].shape}")
+            print(f"  gamma2 shape: {output['pred_dict']['gamma2'].shape}")
+            if 'G_E' in output['pred_dict']:
+                print(f"  G_E shape: {output['pred_dict']['G_E'].shape}")
+                print(f"  G_E mean: {output['pred_dict']['G_E'].mean().item():.4f}")
+        
+        print("\n✓ GEGNN 模型前向传播测试通过")
+        return True
+        
+    except Exception as e:
+        print(f"\n✗ GEGNN 模型前向传播测试失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def test_gegnn_training():
+    """测试 GEGNN 模型训练步骤"""
+    print("\n" + "=" * 80)
+    print("测试 GEGNN 模型训练步骤")
+    print("=" * 80)
+    
+    try:
+        from ppmat.models import GEGNN
+        from ppmat.datasets import BinaryActivityDataset
+        from paddle.io import DataLoader, BatchSampler
+        from ppmat.datasets.collate_fn import DefaultCollator
+        
+        # 创建模型
+        model = GEGNN(
+            in_dim=75,
+            hidden_dim=64,
+            n_classes=1,
+            num_step_message_passing=1,
+            pinn_lambda=1.0
+        )
+
+        print(f"✓ GEGNN 模型创建成功")
+        
+        # 创建数据加载器
+        dataset = BinaryActivityDataset(
+            data_path='./data/gdinn/train_binary.csv',
+            add_self_loop=True,
+            preload_graphs=False,
+            compute_hb=False
+        )
+        
+        sampler = BatchSampler(
+            dataset=dataset,
+            batch_size=32,
+            shuffle=True,
+            drop_last=True
+        )
+        
+        collator = DefaultCollator()
+        dataloader = DataLoader(
+            dataset=dataset,
+            batch_sampler=sampler,
+            num_workers=0,
+            collate_fn=collator
+        )
+        
+        # 创建优化器
+        optimizer = paddle.optimizer.Adam(
+            parameters=model.parameters(),
+            learning_rate=0.001
+        )
+        
+        print(f"✓ 优化器创建成功")
+        
+        # 测试训练步骤
+        model.train()
+        
+        for batch_idx, batch in enumerate(dataloader):
+            if batch_idx >= 3:
+                break
+            
+            # 前向传播
+            output = model(batch)
+            loss = output['loss_dict']['total_loss']
+            
+            # 反向传播
+            loss.backward()
+            
+            # 梯度裁剪
+            paddle.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            
+            # 参数更新
+            optimizer.step()
+            optimizer.clear_grad()
+            
+            print(f"  Step {batch_idx + 1}: Loss = {loss.item():.4f}, "
+                  f"G_E = {output['pred_dict']['G_E'].mean().item():.4f}")
+        
+        print("\n✓ GEGNN 训练步骤测试通过")
+        return True
+        
+    except Exception as e:
+        print(f"\n✗ GEGNN 训练步骤测试失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def create_test_data_mcm():
+    """创建 MCM 模型测试数据（使用 ID 而非 SMILES）"""
+    import pandas as pd
+    
+    print("创建 MCM 测试数据...")
+    
+    # 创建简单的测试数据
+    data = []
+    
+    # 使用 ID 而非 SMILES
+    # 假设有 10 种不同的溶剂
+    solvent_pairs = [
+        # Solvent ID pairs (solv1_id, solv2_id, temp, x1, gamma1, gamma2)
+        (0, 1, 298.15, 0.5, 1.2, 0.8),
+        (1, 2, 298.15, 0.5, 1.1, 0.9),
+        (0, 2, 298.15, 0.5, 1.3, 0.7),
+        (2, 3, 298.15, 0.5, 1.15, 0.85),
+        (3, 4, 298.15, 0.5, 1.25, 0.75),
+    ]
+    
+    # 重复生成更多数据
+    for solv1_id, solv2_id, temp, x1, gamma1, gamma2 in solvent_pairs:
+        for _ in range(100):  # 每个组合生成100个样本
+            # 添加一些随机变化
+            x1_var = np.clip(x1 + np.random.normal(0, 0.1), 0.01, 0.99)
+            x2 = 1.0 - x1_var
+            
+            # 简单的活度系数模拟
+            gamma1_var = gamma1 * (1 + 0.1 * np.random.randn())
+            gamma2_var = gamma2 * (1 + 0.1 * np.random.randn())
+            
+            # 转换为 ln_gamma
+            ln_gamma1_var = np.log(abs(gamma1_var))
+            ln_gamma2_var = np.log(abs(gamma2_var))
+            
+            data.append({
+                'solv1_id': solv1_id,
+                'solv2_id': solv2_id,
+                'temperature (K)': temp + np.random.normal(0, 5),
+                'x(1)': x1_var,
+                'x(2)': x2,
+                'ln_gamma_1': ln_gamma1_var,
+                'ln_gamma_2': ln_gamma2_var
+            })
+    
+    # 创建目录
+    os.makedirs('./data/gdinn', exist_ok=True)
+    
+    # 保存数据
+    df = pd.DataFrame(data)
+    
+    # 分割数据集
+    train_df = df.iloc[:400]
+    val_df = df.iloc[400:450]
+    test_df = df.iloc[450:]
+    
+    train_df.to_csv('./data/gdinn/train_mcm.csv', index=False)
+    val_df.to_csv('./data/gdinn/val_mcm.csv', index=False)
+    test_df.to_csv('./data/gdinn/test_mcm.csv', index=False)
+    
+    print(f"✓ MCM 训练集: {len(train_df)} 样本")
+    print(f"✓ MCM 验证集: {len(val_df)} 样本")
+    print(f"✓ MCM 测试集: {len(test_df)} 样本")
+    print(f"✓ 数据保存在: ./data/gdinn/")
+    
+    return 5  # 返回最大 solvent ID
+
+
+def test_mcm_forward():
+    """测试 MCM 模型前向传播"""
+    print("\n" + "=" * 80)
+    print("测试 MCM 模型前向传播")
+    print("=" * 80)
+    
+    try:
+        from ppmat.models.gdinn.mcm import MCM_MultiMLP
+        import pandas as pd
+        
+        # 创建测试数据
+        max_solvent_id = create_test_data_mcm()
+        
+        # 创建模型
+        model = MCM_MultiMLP(
+            solvent_id_max=max_solvent_id,
+            dim_hidden_channels=64,
+            dropout_hidden=0.05,
+            dropout_interaction=0.03,
+            mlp_num_hid_layers=1,
+            pinn_lambda=1.0
+        )
+        
+        print(f"✓ MCM 模型创建成功")
+        param_count = sum(p.numel().item() for p in model.parameters())
+        print(f"  参数数量: {param_count}")
+        
+        # 加载测试数据
+        df = pd.read_csv('./data/gdinn/train_mcm.csv')
+        
+        # 创建 batch data
+        batch_size = 32
+        batch_data = {
+            'solv1_id': paddle.to_tensor(df['solv1_id'].values[:batch_size], dtype='int64'),
+            'solv2_id': paddle.to_tensor(df['solv2_id'].values[:batch_size], dtype='int64'),
+            'x1': paddle.to_tensor(df['x(1)'].values[:batch_size], dtype='float32'),
+            'gamma1': paddle.to_tensor(df['ln_gamma_1'].values[:batch_size], dtype='float32').unsqueeze(-1),
+            'gamma2': paddle.to_tensor(df['ln_gamma_2'].values[:batch_size], dtype='float32').unsqueeze(-1)
+        }
+        
+        print(f"\n测试前向传播...")
+        
+        # 前向传播
+        output = model(batch_data)
+        
+        print(f"✓ 前向传播成功")
+        print(f"  loss_dict keys: {list(output['loss_dict'].keys())}")
+        print(f"  pred_dict keys: {list(output['pred_dict'].keys())}")
+        print(f"  total_loss: {output['loss_dict']['total_loss'].item():.4f}")
+        print(f"  pred_loss: {output['loss_dict'].get('pred_loss', 0).item():.4f}")
+        print(f"  gd_loss: {output['loss_dict'].get('gd_loss', 0).item():.4f}")
+        print(f"  gamma1 shape: {output['pred_dict']['gamma1'].shape}")
+        print(f"  gamma2 shape: {output['pred_dict']['gamma2'].shape}")
+        
+        print("\n✓ MCM 模型前向传播测试通过")
+        return True
+        
+    except Exception as e:
+        print(f"\n✗ MCM 模型前向传播测试失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def test_mcm_training():
+    """测试 MCM 模型训练步骤"""
+    print("\n" + "=" * 80)
+    print("测试 MCM 模型训练步骤")
+    print("=" * 80)
+    
+    try:
+        from ppmat.models.gdinn.mcm import MCM_MultiMLP
+        import pandas as pd
+        
+        # 创建测试数据
+        max_solvent_id = 5
+        
+        # 创建模型
+        model = MCM_MultiMLP(
+            solvent_id_max=max_solvent_id,
+            dim_hidden_channels=64,
+            dropout_hidden=0.05,
+            dropout_interaction=0.03,
+            mlp_num_hid_layers=1,
+            pinn_lambda=1.0
+        )
+        
+        print(f"✓ MCM 模型创建成功")
+        
+        # 加载训练数据
+        df = pd.read_csv('./data/gdinn/train_mcm.csv')
+        
+        # 创建优化器
+        optimizer = paddle.optimizer.Adam(
+            parameters=model.parameters(),
+            learning_rate=0.001
+        )
+        
+        print(f"✓ 优化器创建成功")
+        
+        # 测试训练步骤
+        model.train()
+        
+        batch_size = 32
+        num_batches = min(3, len(df) // batch_size)
+        
+        for batch_idx in range(num_batches):
+            start_idx = batch_idx * batch_size
+            end_idx = start_idx + batch_size
+            
+            # 创建 batch data
+            batch_data = {
+                'solv1_id': paddle.to_tensor(df['solv1_id'].values[start_idx:end_idx], dtype='int64'),
+                'solv2_id': paddle.to_tensor(df['solv2_id'].values[start_idx:end_idx], dtype='int64'),
+                'x1': paddle.to_tensor(df['x(1)'].values[start_idx:end_idx], dtype='float32'),
+                'gamma1': paddle.to_tensor(df['ln_gamma_1'].values[start_idx:end_idx], dtype='float32').unsqueeze(-1),
+                'gamma2': paddle.to_tensor(df['ln_gamma_2'].values[start_idx:end_idx], dtype='float32').unsqueeze(-1)
+            }
+            
+            # 前向传播
+            output = model(batch_data)
+            loss = output['loss_dict']['total_loss']
+            
+            # 反向传播
+            loss.backward()
+            
+            # 梯度裁剪
+            paddle.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            
+            # 参数更新
+            optimizer.step()
+            optimizer.clear_grad()
+            
+            print(f"  Step {batch_idx + 1}: Loss = {loss.item():.4f}")
+        
+        print("\n✓ MCM 训练步骤测试通过")
+        return True
+        
+    except Exception as e:
+        print(f"\n✗ MCM 训练步骤测试失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 def test_prediction():
     """测试预测"""
     print("\n" + "=" * 80)
@@ -433,8 +980,14 @@ def main():
     results = {}
     
     results['数据加载'] = test_data_loading()
-    results['模型前向传播'] = test_model_forward()
-    results['训练步骤'] = test_training_step()
+    results['SolvGNN前向传播'] = test_model_forward()
+    results['SolvGNN训练步骤'] = test_training_step()
+    results['SolvGNNxMLP前向传播'] = test_solvgnn_xmlp_forward()
+    results['SolvGNNxMLP训练步骤'] = test_solvgnn_xmlp_training()
+    results['GEGNN前向传播'] = test_gegnn_forward()
+    results['GEGNN训练步骤'] = test_gegnn_training()
+    results['MCM前向传播'] = test_mcm_forward()
+    results['MCM训练步骤'] = test_mcm_training()
     results['预测'] = test_prediction()
     
     # 总结

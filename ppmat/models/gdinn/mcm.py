@@ -1,0 +1,403 @@
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""
+MCM (Multi-Component Model) for predicting binary activity coefficients.
+
+This module implements the MCM model which uses embedding layers and MLPs
+to predict activity coefficients for binary solvent mixtures, based on
+solvent/solute IDs rather than molecular graphs.
+
+Reference:
+    Chen, G., Song, Z., Qi, Z., & Sundmacher, K. (2021). Neural recommender 
+    system for the activity coefficient prediction and UNIFAC model extension 
+    of ionic liquid‐solute systems. AIChE Journal, 67(4), e17171.
+"""
+
+import paddle
+import paddle.nn as nn
+import paddle.nn.functional as F
+from typing import Dict, Optional, List
+import paddle.nn.layer as L
+
+
+def get_activation(activation: Optional[str] = None, get_nn: bool = False):
+    """Get activation function based on activation name.
+    
+    Args:
+        activation: Name of activation function
+        get_nn: If True, return nn.Layer; otherwise return functional
+    
+    Returns:
+        Activation function or layer
+    """
+    if activation is None or activation in ["relu", "ReLU", "RELU"]:
+        if get_nn:
+            return nn.ReLU
+        return F.relu
+    elif activation in ["elu", "ELU"]:
+        if get_nn:
+            return nn.ELU
+        return F.elu
+    elif activation in ["LeakyReLU", "LeakyRELU", "leakyReLU", "leakyrelu", 
+                        "leakyRELU", "leaky_relu", "Leaky_ReLU", "Leaky_RELU"]:
+        if get_nn:
+            return nn.LeakyReLU
+        return F.leaky_relu
+    elif activation in ["sigmoid", "Sigmoid", "SIGMOID"]:
+        if get_nn:
+            return nn.Sigmoid
+        return F.sigmoid
+    elif activation in ["softplus", "Softplus", "SOFTPLUS"]:
+        if get_nn:
+            return nn.Softplus
+        return F.softplus
+    elif activation in ["silu", "SiLU", "SILU"]:
+        if get_nn:
+            return nn.Silu
+        return F.silu
+    else:
+        if get_nn:
+            return nn.ReLU
+        return F.relu
+
+
+class MLPModule(nn.Layer):
+    """MLP module with embedding layer for solvent/solute encoding.
+    
+    This module creates an embedding layer followed by multiple linear layers
+    with ReLU activation and dropout.
+    
+    Args:
+        dim_in: Input dimension (vocabulary size for embedding)
+        dim_hidden: Hidden dimension
+        dropout: Dropout rate
+    """
+    
+    def __init__(self, dim_in: int, dim_hidden: int, dropout: float = 0.05):
+        super().__init__()
+        
+        self.embedding = nn.Embedding(dim_in, dim_hidden)
+        self.dropout = nn.Dropout(dropout)
+        
+        # Build MLP layers: Embedding -> Linear -> ReLU -> Dropout -> Linear -> ReLU -> Dropout -> Linear -> ReLU -> Dropout -> Linear -> ReLU
+        self.linear1 = nn.Linear(dim_hidden, dim_hidden)
+        self.linear2 = nn.Linear(dim_hidden, dim_hidden)
+        self.linear3 = nn.Linear(dim_hidden, dim_hidden)
+        self.linear4 = nn.Linear(dim_hidden, dim_hidden)
+    
+    def forward(self, x: paddle.Tensor) -> paddle.Tensor:
+        """Forward pass.
+        
+        Args:
+            x: Input tensor of indices [batch_size]
+        
+        Returns:
+            Output tensor [batch_size, dim_hidden]
+        """
+        # Embedding
+        x = self.embedding(x)  # [batch_size, dim_hidden]
+        x = F.relu(x)
+        x = self.dropout(x)
+        
+        # Layer 1
+        x = self.linear1(x)
+        x = F.relu(x)
+        x = self.dropout(x)
+        
+        # Layer 2
+        x = self.linear2(x)
+        x = F.relu(x)
+        x = self.dropout(x)
+        
+        # Layer 3
+        x = self.linear3(x)
+        x = F.relu(x)
+        x = self.dropout(x)
+        
+        # Layer 4
+        x = self.linear4(x)
+        x = F.relu(x)
+        
+        return x
+
+
+class MCM_MultiMLP(nn.Layer):
+    """MCM (Multi-Component Model) with multiple MLP branches.
+    
+    This model uses embedding layers to encode solvent and solute IDs,
+    then concatenates them with composition information and passes through
+    separate MLP branches to predict ln(gamma1) and ln(gamma2).
+    
+    Model architecture:
+        1. Embedding layers for solvent and solute IDs
+        2. Concatenate embeddings with composition (x1, 1-x1)
+        3. Two separate MLP branches for gamma1 and gamma2 prediction
+        4. Optional Gibbs-Duhem constraint loss computation
+    
+    Args:
+        solvent_id_max: Maximum solvent ID (vocabulary size - 1)
+        dim_hidden_channels: Hidden dimension for embeddings and MLPs (default: 128)
+        dropout_hidden: Dropout rate for hidden layers (default: 0.05)
+        dropout_interaction: Dropout rate for interaction layers (default: 0.03)
+        mlp_activation: Activation function for MLP layers (default: "relu")
+        mlp_num_hid_layers: Number of hidden layers in MLP (default: 1)
+        pinn_lambda: Weight for Gibbs-Duhem constraint loss (default: 1.0)
+    """
+    
+    def __init__(
+        self,
+        solvent_id_max: int,
+        dim_hidden_channels: int = 128,
+        dropout_hidden: float = 0.05,
+        dropout_interaction: float = 0.03,
+        mlp_activation: Optional[str] = None,
+        mlp_num_hid_layers: int = 1,
+        pinn_lambda: float = 1.0,
+        **kwargs
+    ):
+        super().__init__()
+        
+        self.mlp_activation = get_activation(mlp_activation, get_nn=True)
+        self.dropout_p1 = dropout_hidden
+        self.dropout_p2 = dropout_interaction
+        self.dim_hidden_channels = dim_hidden_channels
+        self.pinn_lambda = pinn_lambda
+        
+        # Embedding module for solvent and solute
+        self.solvent_emb = MLPModule(
+            dim_in=solvent_id_max + 1,
+            dim_hidden=self.dim_hidden_channels,
+            dropout=self.dropout_p1
+        )
+        
+        # Mid embedding dimension (concatenated solvent + solute)
+        mid_emb = 2 * self.dim_hidden_channels
+        
+        # Build MLP layers for gamma1 prediction
+        list_layers_end_1 = [
+            nn.Linear(mid_emb + 2, mid_emb),
+            self.mlp_activation()
+        ]
+        if mlp_num_hid_layers > 1:
+            for _ in range(mlp_num_hid_layers - 1):
+                list_layers_end_1.append(nn.Linear(mid_emb, mid_emb))
+                list_layers_end_1.append(self.mlp_activation())
+        list_layers_end_1.append(nn.Linear(mid_emb, 1))
+        
+        # Build MLP layers for gamma2 prediction
+        list_layers_end_2 = [
+            nn.Linear(mid_emb + 2, mid_emb),
+            self.mlp_activation()
+        ]
+        if mlp_num_hid_layers > 1:
+            for _ in range(mlp_num_hid_layers - 1):
+                list_layers_end_2.append(nn.Linear(mid_emb, mid_emb))
+                list_layers_end_2.append(self.mlp_activation())
+        list_layers_end_2.append(nn.Linear(mid_emb, 1))
+        
+        # Create two separate MLP branches
+        self.layers_end = nn.LayerList([
+            nn.Sequential(*list_layers_end_1),
+            nn.Sequential(*list_layers_end_2)
+        ])
+    
+    def forward(
+        self,
+        batch_data: Dict
+    ) -> Dict[str, Dict[str, paddle.Tensor]]:
+        """Forward pass of MCM model.
+        
+        Args:
+            batch_data: Dictionary containing:
+                - solv1_id: Solvent 1 IDs [batch_size]
+                - solv2_id: Solvent 2 IDs [batch_size]
+                - x1: Composition of solvent 1 [batch_size]
+                - gamma1: Target ln(gamma1) [batch_size, 1]
+                - gamma2: Target ln(gamma2) [batch_size, 1]
+        
+        Returns:
+            Dictionary containing:
+                - loss_dict: Dictionary of losses
+                    - pred_loss: Prediction loss (MSE)
+                    - gd_loss: Gibbs-Duhem constraint loss
+                    - total_loss: Combined loss
+                - pred_dict: Dictionary of predictions
+                    - gamma1: Predicted gamma1
+                    - gamma2: Predicted gamma2
+                    - ln_gamma1: Predicted ln(gamma1)
+                    - ln_gamma2: Predicted ln(gamma2)
+        """
+        # Get composition
+        solv1_x = batch_data['x1']
+        while solv1_x.ndim > 1:
+            solv1_x = solv1_x.squeeze(-1)
+        solv1_x.stop_gradient = False
+        
+        # Get solvent and solute IDs
+        solv1_id = batch_data['solv1_id'].cast('int64')
+        solv2_id = batch_data['solv2_id'].cast('int64')
+        
+        # Get labels
+        gamma1_label = batch_data['gamma1']
+        gamma2_label = batch_data['gamma2']
+        while gamma1_label.ndim > 2:
+            gamma1_label = gamma1_label.squeeze(-1)
+        while gamma2_label.ndim > 2:
+            gamma2_label = gamma2_label.squeeze(-1)
+        if gamma1_label.ndim == 1:
+            gamma1_label = gamma1_label.unsqueeze(-1)
+        if gamma2_label.ndim == 1:
+            gamma2_label = gamma2_label.unsqueeze(-1)
+        
+        # Embedding
+        x_solvent = self.solvent_emb(solv1_id)  # [batch_size, dim_hidden]
+        x_solute = self.solvent_emb(solv2_id)   # [batch_size, dim_hidden]
+        
+        # Concatenate embeddings with composition
+        # Original: h = torch.cat([x_solvent, solv1x[:,None], x_solute, 1-solv1x[:,None]], dim=1)
+        h = paddle.concat([
+            x_solvent,
+            solv1_x.unsqueeze(-1),
+            x_solute,
+            (1 - solv1_x).unsqueeze(-1)
+        ], axis=1).cast('float32')  # [batch_size, 2*dim_hidden + 2]
+        
+        # Predict ln(gamma1) and ln(gamma2) using separate MLP branches
+        output_y1 = self.layers_end[0](h)  # [batch_size, 1]
+        output_y2 = self.layers_end[1](h)  # [batch_size, 1]
+        
+        # Concatenate outputs
+        output = paddle.concat([output_y1, output_y2], axis=1)  # [batch_size, 2]
+        
+        # Split into ln_gamma1 and ln_gamma2
+        ln_gamma1_pred = output[:, 0:1]  # [batch_size, 1]
+        ln_gamma2_pred = output[:, 1:2]  # [batch_size, 1]
+        
+        # Convert to gamma
+        gamma1_pred = paddle.exp(ln_gamma1_pred)
+        gamma2_pred = paddle.exp(ln_gamma2_pred)
+        
+        # Compute prediction loss
+        pred_loss = 0.5 * F.mse_loss(ln_gamma1_pred.squeeze(-1), gamma1_label.squeeze(-1)) + \
+                    0.5 * F.mse_loss(ln_gamma2_pred.squeeze(-1), gamma2_label.squeeze(-1))
+        
+        # Compute Gibbs-Duhem constraint loss
+        gd_loss = self._compute_gibbs_duhem_loss(
+            ln_gamma1_pred, ln_gamma2_pred, solv1_x
+        )
+        
+        # Total loss
+        total_loss = pred_loss + self.pinn_lambda * gd_loss
+        
+        # Build output dictionaries
+        loss_dict = {
+            'pred_loss': pred_loss,
+            'gd_loss': gd_loss,
+            'total_loss': total_loss
+        }
+        
+        pred_dict = {
+            'gamma1': gamma1_pred,
+            'gamma2': gamma2_pred,
+            'ln_gamma1': ln_gamma1_pred,
+            'ln_gamma2': ln_gamma2_pred
+        }
+        
+        return {
+            'loss_dict': loss_dict,
+            'pred_dict': pred_dict
+        }
+    
+    def _compute_gibbs_duhem_loss(
+        self,
+        ln_gamma1: paddle.Tensor,
+        ln_gamma2: paddle.Tensor,
+        x1: paddle.Tensor
+    ) -> paddle.Tensor:
+        """Compute Gibbs-Duhem constraint loss.
+        
+        Gibbs-Duhem constraint: x1 * d(ln(gamma1))/dx1 + x2 * d(ln(gamma2))/dx1 = 0
+        
+        Args:
+            ln_gamma1: Predicted ln(gamma1) [batch_size, 1]
+            ln_gamma2: Predicted ln(gamma2) [batch_size, 1]
+            x1: Composition of solvent 1 [batch_size]
+        
+        Returns:
+            Gibbs-Duhem constraint loss (scalar)
+        """
+        # Compute d(ln(gamma1))/dx1
+        y1_x1 = paddle.grad(
+            outputs=ln_gamma1.sum(),
+            inputs=x1,
+            create_graph=True,
+            retain_graph=True,
+            allow_unused=True
+        )[0]
+        
+        # Compute d(ln(gamma2))/dx1
+        y2_x1 = paddle.grad(
+            outputs=ln_gamma2.sum(),
+            inputs=x1,
+            create_graph=True,
+            retain_graph=True,
+            allow_unused=True
+        )[0]
+        
+        # Handle None gradients
+        if y1_x1 is None:
+            y1_x1 = paddle.zeros_like(x1)
+        if y2_x1 is None:
+            y2_x1 = paddle.zeros_like(x1)
+        
+        # Gibbs-Duhem constraint: x1*y1_x1 + x2*y2_x1 = 0
+        x2 = 1 - x1
+        gd_grad = x1 * y1_x1 + x2 * y2_x1
+        
+        # Loss is squared constraint violation
+        gd_loss = paddle.mean(gd_grad ** 2)
+        
+        return gd_loss
+    
+    def predict(
+        self,
+        solv1_id: paddle.Tensor,
+        solv2_id: paddle.Tensor,
+        x1: paddle.Tensor
+    ) -> Dict[str, paddle.Tensor]:
+        """Predict activity coefficients for a binary mixture.
+        
+        This method is for inference only and does not compute losses.
+        
+        Args:
+            solv1_id: Solvent 1 IDs [batch_size]
+            solv2_id: Solvent 2 IDs [batch_size]
+            x1: Composition of solvent 1 [batch_size]
+        
+        Returns:
+            Dictionary containing:
+                - gamma1: Predicted activity coefficient for solvent 1
+                - gamma2: Predicted activity coefficient for solvent 2
+        """
+        batch_data = {
+            'solv1_id': solv1_id,
+            'solv2_id': solv2_id,
+            'x1': x1,
+            'gamma1': paddle.zeros_like(x1),  # Dummy label
+            'gamma2': paddle.zeros_like(x1)   # Dummy label
+        }
+        
+        output = self.forward(batch_data)
+        return output['pred_dict']
