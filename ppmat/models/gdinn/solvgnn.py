@@ -134,7 +134,7 @@ class SolvGNN(nn.Layer):
             batch_data: Dictionary containing:
                 - g1: First molecular graph (solvent 1)
                 - g2: Second molecular graph (solvent 2)
-                - x(1): Composition of solvent 1 (mole fraction) [batch_size, 1]
+                - x1: Composition of solvent 1 (mole fraction) [batch_size, 1]
                 - gamma1: Target activity coefficient for solvent 1 [batch_size, 1]
                 - gamma2: Target activity coefficient for solvent 2 [batch_size, 1]
                 - intra_hb1: Intra-molecular hydrogen bonds in solvent 1 [batch_size, 1]
@@ -157,7 +157,7 @@ class SolvGNN(nn.Layer):
         g2 = batch_data['g2']
 
         # Use real data format field
-        solv1_x = batch_data['x(1)']
+        solv1_x = batch_data['x1']
         
         gamma1_label = batch_data['gamma1']  # [batch_size, 1]
         gamma2_label = batch_data['gamma2']  # [batch_size, 1]
@@ -312,7 +312,7 @@ class SolvGNN(nn.Layer):
         batch_data = {
             'g1': g1,
             'g2': g2,
-            'x(1)': x1,
+            'x1': x1,
             'gamma1': paddle.zeros_like(x1),  # Dummy label
             'gamma2': paddle.zeros_like(x1)   # Dummy label
         }
@@ -378,7 +378,7 @@ class SolvGNNWithHydrogenBonds(SolvGNN):
         """Forward pass with hydrogen bond features."""
         g1 = batch_data['g1']
         g2 = batch_data['g2']
-        solv1_x = batch_data['x(1)']
+        solv1_x = batch_data['x1']
         gamma1_label = batch_data['gamma1']
         gamma2_label = batch_data['gamma2']
         

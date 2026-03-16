@@ -134,8 +134,8 @@ def test_data_loading():
             print(f"  g2 edges: {batch['g2'].num_edges}")
             if 'T' in batch:
                 print(f"  T shape: {batch['T'].shape}")
-            print(f"  x(1) shape: {batch['x(1)'].shape}")
-            print(f"  x(2) shape: {batch['x(2)'].shape}")
+            print(f"  x1 shape: {batch['x1'].shape}")
+            print(f"  x2 shape: {batch['x2'].shape}")
             print(f"  gamma1 shape: {batch['gamma1'].shape}")
             print(f"  gamma2 shape: {batch['gamma2'].shape}")
         
