@@ -302,3 +302,58 @@ def segment_mean(data: paddle.Tensor, segment_ids: paddle.Tensor, num_segments: 
     
     result = sums / counts.unsqueeze(-1) if len(sums.shape) > 1 else sums / counts
     return result
+
+
+def generate_empty_solvsys(batch_size: int) -> MolecularGraph:
+    """Generate an empty solvent system graph for global interaction.
+    
+    This creates a bipartite graph connecting solvent 1 and solvent 2 representations
+    for each batch sample, matching the original GDI-NN architecture.
+    
+    The graph has:
+    - 2 * batch_size nodes (two solvent nodes per batch)
+    - Bidirectional edges between solvent pairs
+    - Self-loops on each node
+    
+    Args:
+        batch_size: Number of samples in the batch
+        
+    Returns:
+        MolecularGraph with the solvent system topology
+    """
+    n_solv = 2
+    num_nodes = n_solv * batch_size
+    
+    # Create edges
+    # Solvent 1 nodes: [0, batch_size)
+    # Solvent 2 nodes: [batch_size, 2*batch_size)
+    src_nodes = []
+    dst_nodes = []
+    
+    # Bidirectional edges between solvent pairs
+    for i in range(batch_size):
+        solv1_node = i
+        solv2_node = batch_size + i
+        # Edge from solv1 to solv2
+        src_nodes.append(solv1_node)
+        dst_nodes.append(solv2_node)
+        # Edge from solv2 to solv1
+        src_nodes.append(solv2_node)
+        dst_nodes.append(solv1_node)
+    
+    # Self-loops on each node
+    for i in range(num_nodes):
+        src_nodes.append(i)
+        dst_nodes.append(i)
+    
+    edges = (paddle.to_tensor(src_nodes, dtype='int64'), paddle.to_tensor(dst_nodes, dtype='int64'))
+    
+    # Create the graph
+    graph = MolecularGraph(
+        num_nodes=num_nodes,
+        edges=edges,
+        node_feat={'h': paddle.zeros([num_nodes, 1])},  # Dummy features
+        edge_feat={'e': paddle.zeros([len(src_nodes), 1])}  # Dummy edge features
+    )
+    
+    return graph

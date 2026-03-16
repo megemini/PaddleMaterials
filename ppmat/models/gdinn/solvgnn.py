@@ -26,7 +26,7 @@ import paddle.nn.functional as F
 from typing import Dict, Optional, Tuple
 
 from ppmat.models.gdinn.layers import GraphConv, MPNNConv
-from ppmat.models.gdinn.graph_utils import mean_nodes
+from ppmat.models.gdinn.graph_utils import mean_nodes, generate_empty_solvsys
 
 
 class SolvGNN(nn.Layer):
@@ -87,7 +87,8 @@ class SolvGNN(nn.Layer):
         )
         
         # MLP classifier for gamma1 and gamma2 (shared)
-        self.classify1 = nn.Linear(hidden_dim, hidden_dim)
+        # Input dimension is hidden_dim + 1 (for composition information)
+        self.classify1 = nn.Linear(hidden_dim + 1, hidden_dim)
         self.classify2 = nn.Linear(hidden_dim, hidden_dim)
         self.classify3 = nn.Linear(hidden_dim, n_classes)
         self.mlp_activation = self._get_activation_layer(mlp_activation)
@@ -140,10 +141,17 @@ class SolvGNN(nn.Layer):
         g2 = batch_data['g2']
 
         # Use real data format field
-        solv1_x = batch_data['x1']  # [batch_size, 1]
+        solv1_x = batch_data['x1']  # [batch_size, 1] or [batch_size, 1, 1]
+        # Ensure solv1_x has shape [batch_size, 1]
+        if solv1_x.ndim == 3:
+            solv1_x = solv1_x.squeeze(-1)  # [batch_size, 1]
         
-        gamma1_label = batch_data['gamma1']  # [batch_size, 1]
-        gamma2_label = batch_data['gamma2']  # [batch_size, 1]
+        gamma1_label = batch_data['gamma1']  # [batch_size, 1] or [batch_size, 1, 1]
+        gamma2_label = batch_data['gamma2']  # [batch_size, 1] or [batch_size, 1, 1]
+        # Ensure labels have shape [batch_size, 1]
+        if gamma1_label.ndim == 3:
+            gamma1_label = gamma1_label.squeeze(-1)
+            gamma2_label = gamma2_label.squeeze(-1)
         
         # Extract node features
         h1 = g1.node_feat['h']  # [num_nodes1, in_dim]
@@ -171,44 +179,50 @@ class SolvGNN(nn.Layer):
         hg1_with_comp = paddle.concat([hg1, solv1_x], axis=1)  # [batch_size, hidden_dim + 1]
         hg2_with_comp = paddle.concat([hg2, 1 - solv1_x], axis=1)  # [batch_size, hidden_dim + 1]
         
-        # Create edge features for global convolution
-        # Using hydrogen bond features if available
+        # Generate empty solvent system graph
+        batch_size = solv1_x.shape[0]
+        empty_solvsys = generate_empty_solvsys(batch_size)
+        
+        # Create hydrogen bond edge features
         if 'inter_hb' in batch_data:
             inter_hb = batch_data['inter_hb']
             intra_hb1 = batch_data['intra_hb1']
             intra_hb2 = batch_data['intra_hb2']
+            # Ensure correct dimensions [batch_size, 1]
+            if inter_hb.ndim == 3:
+                inter_hb = inter_hb.squeeze(-1)
+            if intra_hb1.ndim == 3:
+                intra_hb1 = intra_hb1.squeeze(-1)
+            if intra_hb2.ndim == 3:
+                intra_hb2 = intra_hb2.squeeze(-1)
             # Repeat inter_hb twice and concatenate with intra_hb1 and intra_hb2
             hb_features = paddle.concat([
                 inter_hb.repeat(2),
                 intra_hb1,
                 intra_hb2
             ], axis=0)  # [4 * batch_size, 1]
-            hb_features = hb_features.unsqueeze(1)  # [4 * batch_size, 1]
         else:
             # Use dummy edge features if not available
-            batch_size = solv1_x.shape[0]
             hb_features = paddle.zeros([4 * batch_size, 1], dtype=solv1_x.dtype)
         
         # Concatenate both molecule embeddings for global convolution
         hg_concat = paddle.concat([hg1_with_comp, hg2_with_comp], axis=0)  # [2 * batch_size, hidden_dim + 1]
         
         # Apply global MPNN convolution for molecular interaction
-        # We use g1 as the graph structure (this is a simplification)
-        # In the original implementation, a special "empty solvent system" graph is used
-        hg = self.global_conv(g1, hg_concat, hb_features)
-        
-        # Split the output back into two molecules
-        hg = hg[:hg_concat.shape[0], :]  # [2 * batch_size, hidden_dim]
-        hg1 = hg[:hg1_with_comp.shape[0], :]  # [batch_size, hidden_dim]
-        hg2 = hg[hg1_with_comp.shape[0]:, :]  # [batch_size, hidden_dim]
+        # This is the key component from original GDI-NN architecture
+        hg = self.global_conv(empty_solvsys, hg_concat, hb_features)  # [2 * batch_size, hidden_dim]
         
         # Predict ln_gamma using shared classifier
         output = self.mlp_activation(self.classify1(hg))
         output = self.mlp_activation(self.classify2(output))
-        output = self.classify3(output)  # [2 * batch_size, n_classes]
+        output = self.classify3(output)  # [2 * batch_size, n_classes]  # [2 * batch_size, n_classes]
         
-        # Concatenate predictions from both molecules
-        output = paddle.concat([output[:hg1.shape[0], :], output[hg1.shape[0]:, :]], axis=1)  # [batch_size, 2 * n_classes]
+        # Split predictions back into two molecules
+        output_y1 = output[:hg1_with_comp.shape[0], :]  # [batch_size, n_classes]
+        output_y2 = output[hg1_with_comp.shape[0]:, :]  # [batch_size, n_classes]
+        
+        # Concatenate to get [batch_size, 2 * n_classes]
+        output = paddle.concat([output_y1, output_y2], axis=1)  # [batch_size, 2 * n_classes]
         
         # Split into ln_gamma1 and ln_gamma2
         ln_gamma1_pred = output[:, :self.n_classes]  # [batch_size, 1]
