@@ -60,9 +60,9 @@ class SolvGNN(nn.Layer):
         hidden_dim: int = 256,
         n_classes: int = 1,
         mlp_dropout_rate: float = 0.0,
-        mlp_activation: str = "softplus",
-        mpnn_activation: str = "relu",
-        num_step_message_passing: int = 6,
+        mlp_activation: Optional[str] = None,
+        mpnn_activation: Optional[str] = None,
+        num_step_message_passing: int = 1,
         pinn_lambda: float = 1.0
     ):
         super().__init__()
@@ -70,43 +70,46 @@ class SolvGNN(nn.Layer):
         self.hidden_dim = hidden_dim
         self.n_classes = n_classes
         self.pinn_lambda = pinn_lambda
-        
+
         # Graph convolutional layers (shared between two solvents)
-        self.conv1 = GraphConv(in_dim, hidden_dim, norm=True, activation='relu')
-        self.conv2 = GraphConv(hidden_dim, hidden_dim, norm=True, activation='relu')
-        
+        # Original uses plain DGL GraphConv without built-in activation
+        self.conv1 = GraphConv(in_dim, hidden_dim)
+        self.conv2 = GraphConv(hidden_dim, hidden_dim)
+
         # Global MPNN convolution layer for interaction
         # Input dimension is hidden_dim + 1 (for composition information)
         self.global_conv = MPNNConv(
             node_in_feats=hidden_dim + 1,
-            edge_in_feats=1,  # Edge feature dimension (hb_features has dim=1)
+            edge_in_feats=1,
             node_out_feats=hidden_dim,
             edge_hidden_feats=32,
             num_step_message_passing=num_step_message_passing,
             activation=mpnn_activation
         )
-        
-        # MLP classifier for gamma1 and gamma2 (shared)
-        # Input dimension is hidden_dim + 1 (for composition information)
-        self.classify1 = nn.Linear(hidden_dim + 1, hidden_dim)
+
+        # MLP classifier (shared for both solvents)
+        # Input dimension is hidden_dim (output of global_conv)
+        self.mlp_activation = self._get_activation_func(mlp_activation)
+        self.classify1 = nn.Linear(hidden_dim, hidden_dim)
         self.classify2 = nn.Linear(hidden_dim, hidden_dim)
         self.classify3 = nn.Linear(hidden_dim, n_classes)
-        self.mlp_activation = self._get_activation_layer(mlp_activation)
     
-    def _get_activation_layer(self, activation: str) -> nn.Layer:
-        """Get activation layer based on activation name."""
-        if activation == "relu":
-            return nn.ReLU()
-        elif activation == "leaky_relu":
-            return nn.LeakyReLU()
-        elif activation == "sigmoid":
-            return nn.Sigmoid()
-        elif activation == "tanh":
-            return nn.Tanh()
-        elif activation == "softplus":
-            return nn.Softplus()
+    def _get_activation_func(self, activation: Optional[str] = None):
+        """Get activation function based on activation name (matches original get_activation)."""
+        if activation is None or activation in ["relu", "ReLU", "RELU"]:
+            return F.relu
+        elif activation in ["elu", "ELU"]:
+            return F.elu
+        elif activation in ["leaky_relu", "LeakyReLU"]:
+            return F.leaky_relu
+        elif activation in ["sigmoid", "Sigmoid"]:
+            return F.sigmoid
+        elif activation in ["softplus", "Softplus"]:
+            return F.softplus
+        elif activation in ["silu", "SiLU"]:
+            return F.silu
         else:
-            raise ValueError(f"Unsupported activation: {activation}")
+            return F.relu
     
     def forward(
         self,
@@ -140,90 +143,85 @@ class SolvGNN(nn.Layer):
         g1 = batch_data['g1']
         g2 = batch_data['g2']
 
-        # Use real data format field
-        solv1_x = batch_data['x1']  # [batch_size, 1] or [batch_size, 1, 1]
-        # Ensure solv1_x has shape [batch_size, 1]
-        if solv1_x.ndim == 3:
-            solv1_x = solv1_x.squeeze(-1)  # [batch_size, 1]
-        
-        gamma1_label = batch_data['gamma1']  # [batch_size, 1] or [batch_size, 1, 1]
-        gamma2_label = batch_data['gamma2']  # [batch_size, 1] or [batch_size, 1, 1]
+        # Get composition - ensure 1D [batch_size] like original solv1x
+        solv1_x = batch_data['x1']
+        while solv1_x.ndim > 1:
+            solv1_x = solv1_x.squeeze(-1)  # [batch_size]
+        # Enable gradient tracking for Gibbs-Duhem loss (like original: solv1x.requires_grad = True)
+        solv1_x.stop_gradient = False
+
+        gamma1_label = batch_data['gamma1']
+        gamma2_label = batch_data['gamma2']
         # Ensure labels have shape [batch_size, 1]
-        if gamma1_label.ndim == 3:
+        while gamma1_label.ndim > 2:
             gamma1_label = gamma1_label.squeeze(-1)
+        while gamma2_label.ndim > 2:
             gamma2_label = gamma2_label.squeeze(-1)
-        
+        if gamma1_label.ndim == 1:
+            gamma1_label = gamma1_label.unsqueeze(-1)
+        if gamma2_label.ndim == 1:
+            gamma2_label = gamma2_label.unsqueeze(-1)
+
         # Extract node features
-        h1 = g1.node_feat['h']  # [num_nodes1, in_dim]
-        h2 = g2.node_feat['h']  # [num_nodes2, in_dim]
-        
+        h1 = g1.node_feat['h'].cast('float32')
+        h2 = g2.node_feat['h'].cast('float32')
+
         # Apply graph convolutions for both solvents (shared weights)
-        h1 = self.conv1(g1, h1)
-        h1 = F.relu(h1)
-        h1 = self.conv2(g1, h1)
-        h1 = F.relu(h1)
-        g1.node_feat['h'] = h1  # Update node features in graph
-        
-        h2 = self.conv1(g2, h2)
-        h2 = F.relu(h2)
-        h2 = self.conv2(g2, h2)
-        h2 = F.relu(h2)
-        g2.node_feat['h'] = h2  # Update node features in graph
-        
+        # Original: F.relu(self.conv1(g1, h1)) — conv has no built-in activation
+        h1 = F.relu(self.conv1(g1, h1))
+        h1 = F.relu(self.conv2(g1, h1))
+        h2 = F.relu(self.conv1(g2, h2))
+        h2 = F.relu(self.conv2(g2, h2))
+        g1.node_feat['h'] = h1
+        g2.node_feat['h'] = h2
+
         # Graph-level pooling to get molecular embeddings
         hg1 = mean_nodes(g1, "h")  # [batch_size, hidden_dim]
         hg2 = mean_nodes(g2, "h")  # [batch_size, hidden_dim]
-        
+
         # Concatenate with composition information
-        # This matches the original GDI-NN architecture
-        hg1_with_comp = paddle.concat([hg1, solv1_x], axis=1)  # [batch_size, hidden_dim + 1]
-        hg2_with_comp = paddle.concat([hg2, 1 - solv1_x], axis=1)  # [batch_size, hidden_dim + 1]
-        
+        # Original: torch.cat((hg1, solv1x[:, None]), axis=1)
+        hg1 = paddle.concat([hg1, solv1_x.unsqueeze(-1)], axis=1)  # [batch_size, hidden_dim + 1]
+        hg2 = paddle.concat([hg2, (1 - solv1_x).unsqueeze(-1)], axis=1)  # [batch_size, hidden_dim + 1]
+
         # Generate empty solvent system graph
         batch_size = solv1_x.shape[0]
         empty_solvsys = generate_empty_solvsys(batch_size)
-        
+
         # Create hydrogen bond edge features
+        # Original: torch.cat((inter_hb.repeat(2), intra_hb1, intra_hb2)).unsqueeze(1)
+        # All hb tensors are 1D [batch_size] in original
         if 'inter_hb' in batch_data:
-            inter_hb = batch_data['inter_hb']
-            intra_hb1 = batch_data['intra_hb1']
-            intra_hb2 = batch_data['intra_hb2']
-            # Ensure correct dimensions [batch_size, 1]
-            if inter_hb.ndim == 3:
-                inter_hb = inter_hb.squeeze(-1)
-            if intra_hb1.ndim == 3:
-                intra_hb1 = intra_hb1.squeeze(-1)
-            if intra_hb2.ndim == 3:
-                intra_hb2 = intra_hb2.squeeze(-1)
-            # Repeat inter_hb twice and concatenate with intra_hb1 and intra_hb2
+            inter_hb = batch_data['inter_hb'].cast('float32').flatten()   # [batch_size]
+            intra_hb1 = batch_data['intra_hb1'].cast('float32').flatten()  # [batch_size]
+            intra_hb2 = batch_data['intra_hb2'].cast('float32').flatten()  # [batch_size]
+            # repeat(2) on 1D tensor in PyTorch doubles it: [batch] -> [2*batch]
             hb_features = paddle.concat([
-                inter_hb.repeat(2),
+                paddle.tile(inter_hb, [2]),
                 intra_hb1,
                 intra_hb2
-            ], axis=0)  # [4 * batch_size, 1]
+            ]).unsqueeze(1)  # [4 * batch_size, 1]
         else:
-            # Use dummy edge features if not available
-            hb_features = paddle.zeros([4 * batch_size, 1], dtype=solv1_x.dtype)
-        
+            hb_features = paddle.zeros([4 * batch_size, 1], dtype='float32')
+
         # Concatenate both molecule embeddings for global convolution
-        hg_concat = paddle.concat([hg1_with_comp, hg2_with_comp], axis=0)  # [2 * batch_size, hidden_dim + 1]
-        
+        # Original: torch.cat((hg1, hg2), axis=0)
+        hg_concat = paddle.concat([hg1, hg2], axis=0)  # [2 * batch_size, hidden_dim + 1]
+
         # Apply global MPNN convolution for molecular interaction
-        # This is the key component from original GDI-NN architecture
         hg = self.global_conv(empty_solvsys, hg_concat, hb_features)  # [2 * batch_size, hidden_dim]
-        
+
         # Predict ln_gamma using shared classifier
+        # Original: classify1(hg) where hg is [2*batch, hidden_dim]
         output = self.mlp_activation(self.classify1(hg))
         output = self.mlp_activation(self.classify2(output))
-        output = self.classify3(output)  # [2 * batch_size, n_classes]  # [2 * batch_size, n_classes]
-        
+        output = self.classify3(output)  # [2 * batch_size, n_classes]
+
         # Split predictions back into two molecules
-        output_y1 = output[:hg1_with_comp.shape[0], :]  # [batch_size, n_classes]
-        output_y2 = output[hg1_with_comp.shape[0]:, :]  # [batch_size, n_classes]
-        
-        # Concatenate to get [batch_size, 2 * n_classes]
-        output = paddle.concat([output_y1, output_y2], axis=1)  # [batch_size, 2 * n_classes]
-        
+        # Original: output[0:len(output)//2,:] and output[len(output)//2:,:]
+        half = output.shape[0] // 2
+        output = paddle.concat([output[:half, :], output[half:, :]], axis=1)  # [batch_size, 2 * n_classes]
+
         # Split into ln_gamma1 and ln_gamma2
         ln_gamma1_pred = output[:, :self.n_classes]  # [batch_size, 1]
         ln_gamma2_pred = output[:, self.n_classes:]  # [batch_size, 1]
@@ -231,13 +229,12 @@ class SolvGNN(nn.Layer):
         # Convert to gamma (gamma = exp(ln(gamma)))
         gamma1_pred = paddle.exp(ln_gamma1_pred)
         gamma2_pred = paddle.exp(ln_gamma2_pred)
-        
-        # Compute prediction loss (MSE on ln(gamma) for better scaling)
-        ln_gamma1_label = paddle.log(paddle.maximum(gamma1_label, paddle.ones_like(gamma1_label) * 1e-6))
-        ln_gamma2_label = paddle.log(paddle.maximum(gamma2_label, paddle.ones_like(gamma2_label) * 1e-6))
-        
-        pred_loss = F.mse_loss(ln_gamma1_pred, ln_gamma1_label) + \
-                    F.mse_loss(ln_gamma2_pred, ln_gamma2_label)
+
+        # Compute prediction loss
+        # Labels (gamma1_label, gamma2_label) are already ln(gamma) values from the dataset
+        # Original: loss1 = loss_fn1(y[:,0], labgam1)  where labgam1 is ln(gamma)
+        pred_loss = 0.5 * F.mse_loss(ln_gamma1_pred.squeeze(-1), gamma1_label.squeeze(-1)) + \
+                    0.5 * F.mse_loss(ln_gamma2_pred.squeeze(-1), gamma2_label.squeeze(-1))
         
         # Compute Gibbs-Duhem constraint loss
         gd_loss = self._compute_gibbs_duhem_loss(
@@ -273,46 +270,47 @@ class SolvGNN(nn.Layer):
         x1: paddle.Tensor
     ) -> paddle.Tensor:
         """Compute Gibbs-Duhem constraint loss.
-        
-        The Gibbs-Duhem equation for binary mixtures:
-        x1 * d(ln(gamma1))/dx1 + x2 * d(ln(gamma2))/dx1 = 0
-        
-        Since x2 = 1 - x1, we can write:
-        x1 * d(ln(gamma1))/dx1 + (1 - x1) * d(ln(gamma2))/dx1 = 0
-        
+
+        Matches original GDI-NN:
+            y1_x1 = torch.autograd.grad(output[:,0].sum(), solv1x, create_graph=True)[0]
+            y2_x1 = torch.autograd.grad(output[:,1].sum(), solv1x, create_graph=True)[0]
+            gd_grad = x1 * y1_x1 + x2 * y2_x1
+            loss_gd_grad = (gd_grad).pow(2).mean()
+
+        Note: x1.stop_gradient must be set to False BEFORE the forward computations.
+
         Args:
             ln_gamma1: Predicted ln(gamma1) [batch_size, 1]
             ln_gamma2: Predicted ln(gamma2) [batch_size, 1]
-            x1: Composition of solvent 1 [batch_size, 1]
-            
+            x1: Composition of solvent 1 [batch_size] (must have stop_gradient=False)
+
         Returns:
             Gibbs-Duhem constraint loss (scalar)
         """
-        # Compute gradients using automatic differentiation
-        x1 = x1.stop_gradient(False)  # Enable gradient computation
-        
-        # Compute d(ln(gamma1))/dx1
-        dln_gamma1_dx1 = paddle.grad(
-            outputs=ln_gamma1,
+        # Compute d(ln(gamma1))/dx1: grad(sum(ln_gamma1), x1)
+        # Matches original: torch.autograd.grad(output[:,0].sum(), solv1x, create_graph=True)[0]
+        y1_x1 = paddle.grad(
+            outputs=ln_gamma1.sum(),
             inputs=x1,
             create_graph=True,
             retain_graph=True
         )[0]
-        
+
         # Compute d(ln(gamma2))/dx1
-        dln_gamma2_dx1 = paddle.grad(
-            outputs=ln_gamma2,
+        y2_x1 = paddle.grad(
+            outputs=ln_gamma2.sum(),
             inputs=x1,
             create_graph=True,
             retain_graph=True
         )[0]
-        
-        # Gibbs-Duhem constraint: x1*dln_gamma1/dx1 + (1-x1)*dln_gamma2/dx1 = 0
-        gd_constraint = x1 * dln_gamma1_dx1 + (1 - x1) * dln_gamma2_dx1
-        
-        # Loss is squared constraint violation
-        gd_loss = paddle.mean(gd_constraint ** 2)
-        
+
+        # Gibbs-Duhem constraint: x1*y1_x1 + x2*y2_x1 = 0
+        x2 = 1 - x1
+        gd_grad = x1 * y1_x1 + x2 * y2_x1
+
+        # Loss is squared constraint violation (matches original: gd_grad.pow(2).mean())
+        gd_loss = paddle.mean(gd_grad ** 2)
+
         return gd_loss
     
     def predict(

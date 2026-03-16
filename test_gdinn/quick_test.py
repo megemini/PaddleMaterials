@@ -161,22 +161,19 @@ def test_model_forward():
         from paddle.io import DataLoader, BatchSampler
         from ppmat.datasets.collate_fn import DefaultCollator
         
-        # 创建模型
+        # 创建模型 (使用与原始 GDI-NN 一致的默认参数)
         model = SolvGNN(
             in_dim=75,
             hidden_dim=64,
             n_classes=1,
-            mlp_dropout_rate=0.1,
-            mlp_activation='softplus',
-            mpnn_activation='relu',
-            num_step_message_passing=6,
+            num_step_message_passing=1,
             pinn_lambda=1.0
         )
-        
+
         print(f"✓ 模型创建成功")
         param_count = sum(p.numel().item() for p in model.parameters())
         print(f"  参数数量: {param_count}")
-        
+
         # 创建数据加载器
         dataset = BinaryActivityDataset(
             data_path='./data/gdinn/train_binary.csv',
@@ -184,7 +181,7 @@ def test_model_forward():
             preload_graphs=False,
             compute_hb=False
         )
-        
+
         sampler = BatchSampler(
             dataset=dataset,
             batch_size=32,
@@ -242,18 +239,15 @@ def test_training_step():
         from paddle.io import DataLoader, BatchSampler
         from ppmat.datasets.collate_fn import DefaultCollator
         
-        # 创建模型
+        # 创建模型 (使用与原始 GDI-NN 一致的默认参数)
         model = SolvGNN(
             in_dim=75,
             hidden_dim=64,
             n_classes=1,
-            mlp_dropout_rate=0.1,
-            mlp_activation='softplus',
-            mpnn_activation='relu',
-            num_step_message_passing=6,
+            num_step_message_passing=1,
             pinn_lambda=1.0
         )
-        
+
         # 创建损失函数
         criterion = GDICombinedLoss(
             lambda_gd=1.0,
@@ -262,7 +256,7 @@ def test_training_step():
             gd_loss_type='mse',
             use_ln_gamma=True
         )
-        
+
         print(f"✓ 模型和损失函数创建成功")
         
         # 创建数据加载器
@@ -311,7 +305,7 @@ def test_training_step():
             loss.backward()
             
             # 梯度裁剪
-            paddle.nn.ClipGradNorm(1.0)(model.parameters())
+            paddle.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             
             # 参数更新
             optimizer.step()
@@ -341,15 +335,12 @@ def test_prediction():
         from paddle.io import DataLoader, BatchSampler
         from ppmat.datasets.collate_fn import DefaultCollator
         
-        # 创建模型
+        # 创建模型 (使用与原始 GDI-NN 一致的默认参数)
         model = SolvGNN(
             in_dim=75,
             hidden_dim=64,
             n_classes=1,
-            mlp_dropout_rate=0.1,
-            mlp_activation='softplus',
-            mpnn_activation='relu',
-            num_step_message_passing=6,
+            num_step_message_passing=1,
             pinn_lambda=1.0
         )
         

@@ -283,8 +283,7 @@ class MPNNConv(nn.Layer):
         node_out_feats: int = 128,
         edge_hidden_feats: int = 32,
         num_step_message_passing: int = 6,
-        activation: str = "relu",
-        dropout: float = 0.0
+        activation: Optional[str] = "relu"
     ):
         super().__init__()
         self.node_in_feats = node_in_feats
@@ -292,17 +291,17 @@ class MPNNConv(nn.Layer):
         self.node_out_feats = node_out_feats
         self.num_step_message_passing = num_step_message_passing
         self.activation = activation
-        
-        # Input projection if node_in_feats != node_out_feats
-        # (needed because iterative message passing reuses output as input)
-        if node_in_feats != node_out_feats:
-            self.input_proj = nn.Linear(node_in_feats, node_out_feats)
-        else:
-            self.input_proj = None
+
+        self.mpnn_activation = self._get_activation_func()
+
+        # Project node features: Linear + Activation (matches original)
+        self.project_node_feats = nn.Sequential(
+            nn.Linear(node_in_feats, node_out_feats),
+            self._get_activation_layer()
+        )
 
         # Edge function MLP: transforms edge features to edge weights
-        # Uses node_out_feats for both in/out since iterative steps use projected features
-        self.edge_func = nn.Sequential(
+        edge_network = nn.Sequential(
             nn.Linear(edge_in_feats, edge_hidden_feats),
             self._get_activation_layer(),
             nn.Linear(edge_hidden_feats, node_out_feats * node_out_feats)
@@ -312,27 +311,37 @@ class MPNNConv(nn.Layer):
         self.gnn_layer = NNConv(
             in_feats=node_out_feats,
             out_feats=node_out_feats,
-            edge_func=self.edge_func,
+            edge_func=edge_network,
             aggregator_type="sum"
         )
-        
+
         # GRU for updating node representations
-        self.gru = nn.GRU(node_out_feats, node_out_feats)
-        
-        # Dropout
-        if dropout > 0.0:
-            self.dropout = nn.Dropout(p=dropout)
-        else:
-            self.dropout = None
-        
-        # Layer normalization
-        self.layer_norm = nn.LayerNorm(node_out_feats)
+        self.gru = nn.GRU(node_out_feats, node_out_feats, time_major=True)
     
+    def _get_activation_func(self):
+        """Get activation function based on activation name."""
+        if self.activation is None or self.activation == "relu":
+            return F.relu
+        elif self.activation == "elu":
+            return F.elu
+        elif self.activation in ["leaky_relu", "LeakyReLU"]:
+            return F.leaky_relu
+        elif self.activation == "sigmoid":
+            return F.sigmoid
+        elif self.activation == "softplus":
+            return F.softplus
+        elif self.activation == "silu":
+            return F.silu
+        else:
+            return F.relu
+
     def _get_activation_layer(self) -> nn.Layer:
         """Get activation layer based on activation name."""
-        if self.activation == "relu":
+        if self.activation is None or self.activation == "relu":
             return nn.ReLU()
-        elif self.activation == "leaky_relu":
+        elif self.activation == "elu":
+            return nn.ELU()
+        elif self.activation in ["leaky_relu", "LeakyReLU"]:
             return nn.LeakyReLU()
         elif self.activation == "sigmoid":
             return nn.Sigmoid()
@@ -340,9 +349,11 @@ class MPNNConv(nn.Layer):
             return nn.Tanh()
         elif self.activation == "softplus":
             return nn.Softplus()
+        elif self.activation == "silu":
+            return nn.Silu()
         else:
-            raise ValueError(f"Unsupported activation: {self.activation}")
-    
+            return nn.ReLU()
+
     def forward(
         self,
         graph,
@@ -350,40 +361,36 @@ class MPNNConv(nn.Layer):
         edge_feats: paddle.Tensor
     ) -> paddle.Tensor:
         """Forward pass with iterative message passing.
-        
+
+        Matches original GDI-NN MPNNconv.forward:
+        1. Project node features (Linear + Activation)
+        2. Initialize hidden state from projected features
+        3. For each message passing step:
+           a. Apply activation(gnn_layer(graph, node_feats, edge_feats))
+           b. GRU update with hidden state
+
         Args:
             graph: MolecularGraph or pgl.Graph object
             node_feats: Node features of shape [num_nodes, node_in_feats]
             edge_feats: Edge features of shape [num_edges, edge_in_feats]
-            
+
         Returns:
             Updated node features of shape [num_nodes, node_out_feats]
         """
-        num_nodes = graph.num_nodes if hasattr(graph, 'num_nodes') else graph.graph.num_nodes
-        
-        # Project input features if needed
-        if self.input_proj is not None:
-            node_feats = self.input_proj(node_feats)
+        # Project node features: Linear + Activation (matches original)
+        node_feats = self.project_node_feats(node_feats)
 
-        # Initialize hidden state for GRU: [num_layers=1, num_nodes, node_out_feats]
-        hidden = paddle.zeros([1, num_nodes, self.node_out_feats])
+        # Initialize hidden state from projected features
+        # time_major=True: hidden shape [num_layers=1, batch=num_nodes, feat]
+        hidden_feats = node_feats.unsqueeze(0)  # [1, num_nodes, node_out_feats]
 
         # Message passing for multiple steps
-        for step in range(self.num_step_message_passing):
-            # Apply GNN layer
-            new_h = self.gnn_layer(graph, node_feats, edge_feats)
+        for _ in range(self.num_step_message_passing):
+            # Apply GNN layer with activation (matches original)
+            node_feats = self.mpnn_activation(self.gnn_layer(graph, node_feats, edge_feats))
 
-            # Apply layer norm and activation
-            new_h = self.layer_norm(new_h)
-            new_h = self._get_activation_layer()(new_h)
-
-            # Apply dropout
-            if self.dropout is not None:
-                new_h = self.dropout(new_h)
-
-            # GRU update: input [batch=num_nodes, seq_len=1, feat], hidden [1, num_nodes, feat]
-            new_h = new_h.unsqueeze(1)  # [num_nodes, 1, node_out_feats]
-            out, hidden = self.gru(new_h, hidden)
-            node_feats = out.squeeze(1)  # [num_nodes, node_out_feats]
+            # GRU update: time_major=True, input [seq=1, batch=num_nodes, feat]
+            node_feats, hidden_feats = self.gru(node_feats.unsqueeze(0), hidden_feats)
+            node_feats = node_feats.squeeze(0)  # [num_nodes, node_out_feats]
 
         return node_feats

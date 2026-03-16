@@ -323,37 +323,34 @@ def generate_empty_solvsys(batch_size: int) -> MolecularGraph:
     """
     n_solv = 2
     num_nodes = n_solv * batch_size
-    
-    # Create edges
-    # Solvent 1 nodes: [0, batch_size)
-    # Solvent 2 nodes: [batch_size, 2*batch_size)
-    src_nodes = []
-    dst_nodes = []
-    
-    # Bidirectional edges between solvent pairs
-    for i in range(batch_size):
-        solv1_node = i
-        solv2_node = batch_size + i
-        # Edge from solv1 to solv2
-        src_nodes.append(solv1_node)
-        dst_nodes.append(solv2_node)
-        # Edge from solv2 to solv1
-        src_nodes.append(solv2_node)
-        dst_nodes.append(solv1_node)
-    
-    # Self-loops on each node
-    for i in range(num_nodes):
-        src_nodes.append(i)
-        dst_nodes.append(i)
-    
-    edges = (paddle.to_tensor(src_nodes, dtype='int64'), paddle.to_tensor(dst_nodes, dtype='int64'))
+
+    # Create edges matching original DGL order:
+    #   src = arange(batch_size)           -> [0, 1, ..., batch-1]
+    #   dst = arange(batch_size, 2*batch)  -> [batch, batch+1, ..., 2*batch-1]
+    #   add_edges(cat(src, dst), cat(dst, src))  -> all src->dst then all dst->src
+    #   add_edges(arange(2*batch), arange(2*batch))  -> self-loops
+    #
+    # Edge order matters because hb_features are indexed by position:
+    #   [0..batch-1]: inter_hb (solv1->solv2)
+    #   [batch..2*batch-1]: inter_hb (solv2->solv1)
+    #   [2*batch..3*batch-1]: intra_hb1 (self-loops on solv1)
+    #   [3*batch..4*batch-1]: intra_hb2 (self-loops on solv2)
+    src_range = paddle.arange(batch_size, dtype='int64')
+    dst_range = paddle.arange(batch_size, num_nodes, dtype='int64')
+    all_range = paddle.arange(num_nodes, dtype='int64')
+
+    # Bidirectional edges: cat(src, dst) -> cat(dst, src)
+    edge_src = paddle.concat([paddle.concat([src_range, dst_range]), all_range])
+    edge_dst = paddle.concat([paddle.concat([dst_range, src_range]), all_range])
+
+    edges = (edge_src, edge_dst)
     
     # Create the graph
     graph = MolecularGraph(
         num_nodes=num_nodes,
         edges=edges,
         node_feat={'h': paddle.zeros([num_nodes, 1])},  # Dummy features
-        edge_feat={'e': paddle.zeros([len(src_nodes), 1])}  # Dummy edge features
+        edge_feat={'e': paddle.zeros([edge_src.shape[0], 1])}  # Dummy edge features
     )
     
     return graph
