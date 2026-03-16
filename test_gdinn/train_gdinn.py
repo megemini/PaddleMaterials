@@ -93,7 +93,7 @@ def create_dataloader(data_path, batch_size, shuffle=True, num_workers=4):
     
     # 创建数据加载器
     from ppmat.datasets.collate_fn import DefaultCollator
-    collator = DefaultCollator(graph_keys=['g1', 'g2'])
+    collator = DefaultCollator()
     
     dataloader = DataLoader(
         dataset=dataset,

@@ -111,7 +111,7 @@ def test_data_loading():
         )
         
         # 创建数据加载器
-        collator = DefaultCollator(graph_keys=['g1', 'g2'])
+        collator = DefaultCollator()
         dataloader = DataLoader(
             dataset=dataset,
             batch_sampler=sampler,
@@ -192,7 +192,7 @@ def test_model_forward():
             drop_last=True
         )
         
-        collator = DefaultCollator(graph_keys=['g1', 'g2'])
+        collator = DefaultCollator()
         dataloader = DataLoader(
             dataset=dataset,
             batch_sampler=sampler,
@@ -280,7 +280,7 @@ def test_training_step():
             drop_last=True
         )
         
-        collator = DefaultCollator(graph_keys=['g1', 'g2'])
+        collator = DefaultCollator()
         dataloader = DataLoader(
             dataset=dataset,
             batch_sampler=sampler,
@@ -368,7 +368,7 @@ def test_prediction():
             drop_last=False
         )
         
-        collator = DefaultCollator(graph_keys=['g1', 'g2'])
+        collator = DefaultCollator()
         dataloader = DataLoader(
             dataset=dataset,
             batch_sampler=sampler,
