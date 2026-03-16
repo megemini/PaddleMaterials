@@ -43,7 +43,7 @@ from ppmat.models.megnet.megnet import MEGNetPlus
 from ppmat.models.infgcn.infgcn import InfGCN
 from ppmat.models.mateno.mateno import MatENO
 from ppmat.models.gdinn.solvgnn import SolvGNN
-from ppmat.models.gdinn.solvgnn import SolvGNNWithHydrogenBonds
+
 from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils import save_load
@@ -70,7 +70,7 @@ __all__ = [
     "InfGCN",
     "MatENO",
     "SolvGNN",
-    "SolvGNNWithHydrogenBonds",
+
 ]
 
 # Warning: The key of the dictionary must be consistent with the file name of the value

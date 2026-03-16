@@ -37,7 +37,7 @@ def parse_args():
     
     # 模型参数
     parser.add_argument('--model_type', type=str, default='SolvGNN',
-                        help='Model type: SolvGNN or SolvGNNWithHydrogenBonds')
+                        help='Model type: SolvGNN')
     parser.add_argument('--hidden_dim', type=int, default=64,
                         help='Hidden dimension size')
     parser.add_argument('--pinn_lambda', type=float, default=1.0,
@@ -153,18 +153,6 @@ def train(args):
     try:
         if args.model_type == 'SolvGNN':
             model = SolvGNN(
-                in_dim=75,
-                hidden_dim=args.hidden_dim,
-                n_classes=1,
-                mlp_dropout_rate=0.1,
-                mlp_activation='softplus',
-                mpnn_activation='relu',
-                num_step_message_passing=6,
-                pinn_lambda=args.pinn_lambda
-            )
-        elif args.model_type == 'SolvGNNWithHydrogenBonds':
-            from ppmat.models import SolvGNNWithHydrogenBonds
-            model = SolvGNNWithHydrogenBonds(
                 in_dim=75,
                 hidden_dim=args.hidden_dim,
                 n_classes=1,
