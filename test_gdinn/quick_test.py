@@ -163,7 +163,7 @@ def test_model_forward():
         
         # 创建模型
         model = SolvGNN(
-            in_dim=74,
+            in_dim=75,
             hidden_dim=64,
             n_classes=1,
             mlp_dropout_rate=0.1,
@@ -244,7 +244,7 @@ def test_training_step():
         
         # 创建模型
         model = SolvGNN(
-            in_dim=74,
+            in_dim=75,
             hidden_dim=64,
             n_classes=1,
             mlp_dropout_rate=0.1,
@@ -343,7 +343,7 @@ def test_prediction():
         
         # 创建模型
         model = SolvGNN(
-            in_dim=74,
+            in_dim=75,
             hidden_dim=64,
             n_classes=1,
             mlp_dropout_rate=0.1,

@@ -44,7 +44,7 @@ class SolvGNN(nn.Layer):
         5. Gibbs-Duhem constraint loss computation
     
     Args:
-        in_dim: Input node feature dimension (default: 74 for atom features)
+        in_dim: Input node feature dimension (default: 75 for atom features)
         hidden_dim: Hidden dimension for graph layers (default: 256)
         n_classes: Number of output classes (default: 1 for gamma)
         mlp_dropout_rate: Dropout rate for MLP layers (default: 0.0)
@@ -56,7 +56,7 @@ class SolvGNN(nn.Layer):
     
     def __init__(
         self,
-        in_dim: int = 74,
+        in_dim: int = 75,
         hidden_dim: int = 256,
         n_classes: int = 1,
         mlp_dropout_rate: float = 0.0,
@@ -328,7 +328,7 @@ class SolvGNNWithHydrogenBonds(SolvGNN):
     to improve prediction accuracy for polar and hydrogen-bonding solvents.
     
     Args:
-        in_dim: Input node feature dimension (default: 74)
+        in_dim: Input node feature dimension (default: 75)
         hidden_dim: Hidden dimension for graph layers (default: 256)
         n_classes: Number of output classes (default: 1)
         mlp_dropout_rate: Dropout rate for MLP layers (default: 0.0)
@@ -341,7 +341,7 @@ class SolvGNNWithHydrogenBonds(SolvGNN):
     
     def __init__(
         self,
-        in_dim: int = 74,
+        in_dim: int = 75,
         hidden_dim: int = 256,
         n_classes: int = 1,
         mlp_dropout_rate: float = 0.0,

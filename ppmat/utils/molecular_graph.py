@@ -37,13 +37,13 @@ from ppmat.models.gdinn.graph_utils import MolecularGraph
 
 
 class CanonicalAtomFeaturizer:
-    """Atom feature encoder that generates 74-dimensional atom features.
+    """Atom feature encoder that generates 75-dimensional atom features.
 
     This class provides comprehensive atom features including atom type, degree,
     formal charge, valence, hybridization, and other chemical properties.
 
-    Features (74 dimensions total):
-        - Atom type (one-hot, 44 types)
+    Features (75 dimensions total):
+        - Atom type (one-hot, 45 types)
         - Degree (one-hot, 11 types)
         - Formal charge (1)
         - Radical electrons (1)
@@ -56,7 +56,7 @@ class CanonicalAtomFeaturizer:
     
     def __init__(self):
         """Initialize atom featurizer with allowable feature values."""
-        # 44 atom types: H, He, Li, Be, B, C, N, O, F, Ne, Na, Mg, Al, Si, P, S, Cl,
+        # 45 atom types: H, He, Li, Be, B, C, N, O, F, Ne, Na, Mg, Al, Si, P, S, Cl,
         # Ar, K, Ca, Sc, Ti, V, Cr, Mn, Fe, Co, Ni, Cu, Zn, Ga, Ge, As, Se, Br,
         # Kr, Rb, Sr, Y, Zr, Nb, Mo, Tc, Ru, Rh
         self.allowable_atom_types = [
@@ -92,14 +92,14 @@ class CanonicalAtomFeaturizer:
             mol: RDKit molecule object
             
         Returns:
-            Dictionary with "h" key containing atom features of shape [num_atoms, 74]
+            Dictionary with "h" key containing atom features of shape [num_atoms, 75]
         """
         if not RDKIT_AVAILABLE:
             raise ImportError("RDKit is required for molecular graph construction. "
                             "Please install it with: pip install rdkit")
         
         num_atoms = mol.GetNumAtoms()
-        features = np.zeros((num_atoms, 74), dtype=np.float32)
+        features = np.zeros((num_atoms, 75), dtype=np.float32)
         
         for i in range(num_atoms):
             atom = mol.GetAtomWithIdx(i)
@@ -115,9 +115,9 @@ class CanonicalAtomFeaturizer:
             atom: RDKit atom object
             
         Returns:
-            Feature vector of shape [74]
+            Feature vector of shape [75]
         """
-        feature = np.zeros(74, dtype=np.float32)
+        feature = np.zeros(75, dtype=np.float32)
         idx = 0
         
         # 1. Atom type (one-hot, 44)

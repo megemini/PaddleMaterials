@@ -131,7 +131,7 @@ def predict(args):
     try:
         if args.model_type == 'SolvGNN':
             model = SolvGNN(
-                in_dim=74,
+                in_dim=75,
                 hidden_dim=args.hidden_dim,
                 n_classes=1,
                 mlp_dropout_rate=0.1,
@@ -143,7 +143,7 @@ def predict(args):
         elif args.model_type == 'SolvGNNWithHydrogenBonds':
             from ppmat.models import SolvGNNWithHydrogenBonds
             model = SolvGNNWithHydrogenBonds(
-                in_dim=74,
+                in_dim=75,
                 hidden_dim=args.hidden_dim,
                 n_classes=1,
                 mlp_dropout_rate=0.1,
