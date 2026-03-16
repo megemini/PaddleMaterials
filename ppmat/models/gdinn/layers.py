@@ -87,16 +87,19 @@ class NNConv(nn.Layer):
         Returns:
             Updated node features of shape [num_nodes, out_feats]
         """
-        if hasattr(graph, 'graph'):
-            # Handle MolecularGraph wrapper
-            pgl_graph = graph.graph
+        # Get edge information
+        if hasattr(graph, 'edges'):
+            # MolecularGraph: edges is a tuple (src, dst)
+            src, dst = graph.edges
+            num_nodes = graph.num_nodes
+            num_edges = len(src)
         else:
-            pgl_graph = graph
-        
-        # Get edge information from PGL graph
-        src, dst = pgl_graph.edges
-        num_nodes = pgl_graph.num_nodes
-        num_edges = len(src)
+            # pgl.Graph: edges is a tensor of shape [num_edges, 2]
+            edge_tensor = graph.edges
+            src = edge_tensor[:, 0]
+            dst = edge_tensor[:, 1]
+            num_nodes = graph.num_nodes
+            num_edges = len(src)
         
         # Transform edge features to edge weights
         # edge_func(e_ij) returns [num_edges, in_feats * out_feats]
@@ -195,14 +198,17 @@ class GraphConv(nn.Layer):
         Returns:
             Updated node features of shape [num_nodes, out_feats]
         """
-        if hasattr(graph, 'graph'):
-            pgl_graph = graph.graph
-        else:
-            pgl_graph = graph
-        
         # Get edge information
-        src, dst = pgl_graph.edges
-        num_nodes = pgl_graph.num_nodes
+        if hasattr(graph, 'edges'):
+            # MolecularGraph: edges is a tuple (src, dst)
+            src, dst = graph.edges
+            num_nodes = graph.num_nodes
+        else:
+            # pgl.Graph: edges is a tensor of shape [num_edges, 2]
+            edge_tensor = graph.edges
+            src = edge_tensor[:, 0]
+            dst = edge_tensor[:, 1]
+            num_nodes = graph.num_nodes
         
         # Transform node features
         feat = feat @ self.weight
@@ -210,7 +216,10 @@ class GraphConv(nn.Layer):
         # Apply self-loop
         if self.norm:
             # Symmetric normalization: D^(-1/2) * A * D^(-1/2)
-            deg = pgl_graph.indegree().cast('float32')
+            if hasattr(graph, 'in_degrees'):
+                deg = graph.in_degrees().cast('float32')
+            else:
+                deg = graph.indegree().cast('float32')
             norm_coeff = paddle.pow(deg, -0.5)
             norm_coeff = paddle.where(
                 paddle.isinf(norm_coeff),
