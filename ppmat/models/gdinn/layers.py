@@ -293,16 +293,24 @@ class MPNNConv(nn.Layer):
         self.num_step_message_passing = num_step_message_passing
         self.activation = activation
         
+        # Input projection if node_in_feats != node_out_feats
+        # (needed because iterative message passing reuses output as input)
+        if node_in_feats != node_out_feats:
+            self.input_proj = nn.Linear(node_in_feats, node_out_feats)
+        else:
+            self.input_proj = None
+
         # Edge function MLP: transforms edge features to edge weights
+        # Uses node_out_feats for both in/out since iterative steps use projected features
         self.edge_func = nn.Sequential(
             nn.Linear(edge_in_feats, edge_hidden_feats),
             self._get_activation_layer(),
-            nn.Linear(edge_hidden_feats, node_in_feats * node_out_feats)
+            nn.Linear(edge_hidden_feats, node_out_feats * node_out_feats)
         )
-        
+
         # NNConv layer
         self.gnn_layer = NNConv(
-            in_feats=node_in_feats,
+            in_feats=node_out_feats,
             out_feats=node_out_feats,
             edge_func=self.edge_func,
             aggregator_type="sum"
@@ -353,6 +361,10 @@ class MPNNConv(nn.Layer):
         """
         num_nodes = graph.num_nodes if hasattr(graph, 'num_nodes') else graph.graph.num_nodes
         
+        # Project input features if needed
+        if self.input_proj is not None:
+            node_feats = self.input_proj(node_feats)
+
         # Initialize hidden state for GRU: [num_layers=1, num_nodes, node_out_feats]
         hidden = paddle.zeros([1, num_nodes, self.node_out_feats])
 
