@@ -369,9 +369,9 @@ class MPNNConv(nn.Layer):
             if self.dropout is not None:
                 new_h = self.dropout(new_h)
 
-            # GRU update
-            new_h = new_h.unsqueeze(0)  # [1, num_nodes, node_out_feats]
+            # GRU update: input [batch=num_nodes, seq_len=1, feat], hidden [1, num_nodes, feat]
+            new_h = new_h.unsqueeze(1)  # [num_nodes, 1, node_out_feats]
             out, hidden = self.gru(new_h, hidden)
-            node_feats = out.squeeze(0)  # [num_nodes, node_out_feats]
+            node_feats = out.squeeze(1)  # [num_nodes, node_out_feats]
 
         return node_feats
