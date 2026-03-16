@@ -110,8 +110,11 @@ class NNConv(nn.Layer):
         src_feat = feat[src]  # [num_edges, in_feats]
         
         # Compute messages: m_ij = (edge_func(e_ij) * h_j)
-        # Using einsum: [num_edges, in_feats] @ [num_edges, in_feats, out_feats] -> [num_edges, out_feats]
-        messages = paddle.einsum('ni,nio->no', src_feat, edge_weights)
+        # Equivalent to einsum('ni,nio->no', src_feat, edge_weights)
+        # Using bmm instead of einsum because einsum_grad doesn't support
+        # higher-order gradients needed by paddle.grad(create_graph=True)
+        # bmm: [num_edges, 1, in_feats] @ [num_edges, in_feats, out_feats] -> [num_edges, 1, out_feats]
+        messages = paddle.bmm(src_feat.unsqueeze(1), edge_weights).squeeze(1)
         
         # Aggregate messages at destination nodes
         if self.aggregator_type == "sum":

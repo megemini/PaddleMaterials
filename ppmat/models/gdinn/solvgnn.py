@@ -293,7 +293,8 @@ class SolvGNN(nn.Layer):
             outputs=ln_gamma1.sum(),
             inputs=x1,
             create_graph=True,
-            retain_graph=True
+            retain_graph=True,
+            allow_unused=True
         )[0]
 
         # Compute d(ln(gamma2))/dx1
@@ -301,8 +302,16 @@ class SolvGNN(nn.Layer):
             outputs=ln_gamma2.sum(),
             inputs=x1,
             create_graph=True,
-            retain_graph=True
+            retain_graph=True,
+            allow_unused=True
         )[0]
+
+        # If x1 is not connected to the graph (e.g. prediction mode),
+        # paddle.grad returns None. Fall back to zero gradient.
+        if y1_x1 is None:
+            y1_x1 = paddle.zeros_like(x1)
+        if y2_x1 is None:
+            y2_x1 = paddle.zeros_like(x1)
 
         # Gibbs-Duhem constraint: x1*y1_x1 + x2*y2_x1 = 0
         x2 = 1 - x1
