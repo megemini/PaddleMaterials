@@ -183,17 +183,8 @@ class SolvGNN(nn.Layer):
         # Graph-level pooling to get molecular embeddings
         # For single graphs, mean_nodes returns [1, hidden_dim]
         # For batched graphs, mean_nodes returns [batch_size, hidden_dim]
-        if e1 is not None and len(g1.edges[0]) > 0:
-            h1_pooled = self.global_conv(g1, h1, e1)
-            h1 = mean_nodes(g1, "h")  # [batch_size, hidden_dim]
-        else:
-            h1 = mean_nodes(g1, "h")
-        
-        if e2 is not None and len(g2.edges[0]) > 0:
-            h2_pooled = self.global_conv(g2, h2, e2)
-            h2 = mean_nodes(g2, "h")
-        else:
-            h2 = mean_nodes(g2, "h")
+        h1 = mean_nodes(g1, "h")  # [batch_size, hidden_dim]
+        h2 = mean_nodes(g2, "h")  # [batch_size, hidden_dim]
         
         # Concatenate molecular embeddings
         h_combined = paddle.concat([h1, h2], axis=1)  # [batch_size, 2*hidden_dim]
