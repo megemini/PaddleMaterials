@@ -133,8 +133,10 @@ def batch_graphs(graphs: List[MolecularGraph]) -> MolecularGraph:
     all_dst = []
     for i, g in enumerate(graphs):
         src, dst = g.edges
-        all_src.append(src + node_offset[i])
-        all_dst.append(dst + node_offset[i])
+        # Convert offsets to the same type as edges
+        offset = paddle.to_tensor(node_offset[i], dtype=src.dtype)
+        all_src.append(src + offset)
+        all_dst.append(dst + offset)
     
     edges = (
         paddle.concat(all_src),
@@ -252,17 +254,28 @@ def segment_sum(data: paddle.Tensor, segment_ids: paddle.Tensor, num_segments: i
     Returns:
         Tensor of shape [num_segments, ...] with summed data per segment
     """
-    shape = data.shape
-    data = data.reshape([-1])
+    original_shape = data.shape
+    ndim = len(original_shape)
+    
+    # Flatten all dimensions except the first (segment dimension)
+    if ndim > 1:
+        feat_dim = int(np.prod(original_shape[1:]))
+        data = data.reshape([original_shape[0], feat_dim])
+    else:
+        feat_dim = 1
+    
     segment_ids = segment_ids.reshape([-1])
     
     # Create one-hot encoding
     one_hot = paddle.nn.functional.one_hot(segment_ids, num_segments).cast('float32')
     
-    # Sum using matrix multiplication
-    result = paddle.matmul(one_hot.T, data.unsqueeze(1)).squeeze(1)
+    # Sum using matrix multiplication: [num_segments, N] @ [N, feat_dim] -> [num_segments, feat_dim]
+    result = paddle.matmul(one_hot.T, data)
     
-    result = result.reshape([num_segments] + list(shape[1:]))
+    # Reshape back to original dimensions (excluding the segment dimension)
+    if ndim > 1:
+        result = result.reshape([num_segments] + list(original_shape[1:]))
+    
     return result
 
 

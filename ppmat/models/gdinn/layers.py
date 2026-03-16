@@ -213,7 +213,7 @@ class GraphConv(nn.Layer):
         # Transform node features
         feat = feat @ self.weight
         
-        # Apply self-loop
+        # Message passing
         if self.norm:
             # Symmetric normalization: D^(-1/2) * A * D^(-1/2)
             if hasattr(graph, 'in_degrees'):
@@ -227,17 +227,21 @@ class GraphConv(nn.Layer):
                 norm_coeff
             )
             
-            # Normalize source and destination features
-            src_norm = norm_coeff[src]
-            dst_norm = norm_coeff[dst]
-            feat = feat * src_norm.unsqueeze(-1)
-        
-        # Message passing
-        out = segment_sum(feat[src], dst, num_nodes)
-        
-        # Apply self-loop
-        if self.norm:
-            out = out * dst_norm.unsqueeze(-1)
+            # Get source features and normalize them
+            src_feat = feat[src]  # [num_edges, out_feats]
+            src_norm = norm_coeff[src]  # [num_edges]
+            src_feat = src_feat * src_norm.unsqueeze(-1)  # [num_edges, out_feats]
+            
+            # Aggregate normalized messages
+            out = segment_sum(src_feat, dst, num_nodes)
+            
+            # Normalize by destination degrees
+            dst_norm = norm_coeff  # [num_nodes]
+            out = out * dst_norm.unsqueeze(-1)  # [num_nodes, out_feats]
+        else:
+            # No normalization
+            src_feat = feat[src]
+            out = segment_sum(src_feat, dst, num_nodes)
         
         # Add bias if needed
         if self.bias is not None:
