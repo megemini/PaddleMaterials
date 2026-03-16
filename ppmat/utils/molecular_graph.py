@@ -53,7 +53,6 @@ class CanonicalAtomFeaturizer:
         - Mass (1)
         - Valence (one-hot, 5 types)
     """
-    """
     
     def __init__(self):
         """Initialize atom featurizer with allowable feature values."""
