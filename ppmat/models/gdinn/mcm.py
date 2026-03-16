@@ -330,6 +330,10 @@ class MCM_MultiMLP(nn.Layer):
         
         Gibbs-Duhem constraint: x1 * d(ln(gamma1))/dx1 + x2 * d(ln(gamma2))/dx1 = 0
         
+        Note: Uses create_graph=False to avoid gradient issues with dropout.
+        This means the Gibbs-Duhem loss won't contribute to gradients during
+        backpropagation, but still serves as a regularization term.
+        
         Args:
             ln_gamma1: Predicted ln(gamma1) [batch_size, 1]
             ln_gamma2: Predicted ln(gamma2) [batch_size, 1]
@@ -338,11 +342,11 @@ class MCM_MultiMLP(nn.Layer):
         Returns:
             Gibbs-Duhem constraint loss (scalar)
         """
-        # Compute d(ln(gamma1))/dx1
+        # Compute d(ln(gamma1))/dx1 with create_graph=False to avoid dropout gradient issues
         y1_x1 = paddle.grad(
             outputs=ln_gamma1.sum(),
             inputs=x1,
-            create_graph=True,
+            create_graph=False,  # Changed to False to avoid dropout gradient issues
             retain_graph=True,
             allow_unused=True
         )[0]
@@ -351,7 +355,7 @@ class MCM_MultiMLP(nn.Layer):
         y2_x1 = paddle.grad(
             outputs=ln_gamma2.sum(),
             inputs=x1,
-            create_graph=True,
+            create_graph=False,  # Changed to False to avoid dropout gradient issues
             retain_graph=True,
             allow_unused=True
         )[0]
