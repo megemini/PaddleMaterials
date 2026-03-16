@@ -315,8 +315,12 @@ class MPNNConv(nn.Layer):
             aggregator_type="sum"
         )
 
-        # GRU for updating node representations
-        self.gru = nn.GRU(node_out_feats, node_out_feats, time_major=True)
+        # GRUCell for updating node representations
+        # Using GRUCell instead of GRU because Paddle's cuDNN-based GRU
+        # does not support second-order gradients (needed by paddle.grad with
+        # create_graph=True in Gibbs-Duhem loss). GRUCell uses basic ops that
+        # support higher-order gradients.
+        self.gru_cell = nn.GRUCell(node_out_feats, node_out_feats)
     
     def _get_activation_func(self):
         """Get activation function based on activation name."""
@@ -381,16 +385,16 @@ class MPNNConv(nn.Layer):
         node_feats = self.project_node_feats(node_feats)
 
         # Initialize hidden state from projected features
-        # time_major=True: hidden shape [num_layers=1, batch=num_nodes, feat]
-        hidden_feats = node_feats.unsqueeze(0)  # [1, num_nodes, node_out_feats]
+        # GRUCell hidden: [num_nodes, node_out_feats]
+        hidden_feats = node_feats  # [num_nodes, node_out_feats]
 
         # Message passing for multiple steps
         for _ in range(self.num_step_message_passing):
             # Apply GNN layer with activation (matches original)
             node_feats = self.mpnn_activation(self.gnn_layer(graph, node_feats, edge_feats))
 
-            # GRU update: time_major=True, input [seq=1, batch=num_nodes, feat]
-            node_feats, hidden_feats = self.gru(node_feats.unsqueeze(0), hidden_feats)
-            node_feats = node_feats.squeeze(0)  # [num_nodes, node_out_feats]
+            # GRUCell update: input [num_nodes, feat], hidden [num_nodes, feat]
+            hidden_feats, _ = self.gru_cell(node_feats, hidden_feats)
+            node_feats = hidden_feats  # GRUCell output is the new hidden state
 
         return node_feats
