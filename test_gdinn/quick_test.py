@@ -16,14 +16,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'ppmat'))
 
 
 def create_test_data():
-    """创建测试数据"""
+    """创建测试数据（使用真实数据格式）"""
     import pandas as pd
-    
+
     print("创建测试数据...")
-    
+
     # 创建简单的测试数据
     data = []
-    
+
     # 添加一些常见的溶剂组合
     solvent_pairs = [
         # Water + Ethanol
@@ -33,43 +33,47 @@ def create_test_data():
         # Water + Methanol
         ("O", "CO", 298.15, 0.5, 1.3, 0.7),
     ]
-    
+
     # 重复生成更多数据
     for solv1, solv2, temp, x1, gamma1, gamma2 in solvent_pairs:
         for _ in range(100):  # 每个组合生成100个样本
             # 添加一些随机变化
             x1_var = np.clip(x1 + np.random.normal(0, 0.1), 0.01, 0.99)
             x2 = 1.0 - x1_var
-            
+
             # 简单的活度系数模拟
             gamma1_var = gamma1 * (1 + 0.1 * np.random.randn())
             gamma2_var = gamma2 * (1 + 0.1 * np.random.randn())
-            
+
+            # 转换为 ln_gamma
+            ln_gamma1_var = np.log(abs(gamma1_var))
+            ln_gamma2_var = np.log(abs(gamma2_var))
+
             data.append({
-                'solv1': solv1,
-                'solv2': solv2,
-                'T': temp + np.random.normal(0, 5),
-                'x1': x1_var,
-                'x2': x2,
-                'gamma1': abs(gamma1_var),
-                'gamma2': abs(gamma2_var)
+                'SMILES_x': solv1,
+                'SMILES_y': solv2,
+                'temperature (K)': temp + np.random.normal(0, 5),
+                'x(1)': x1_var,
+                'x(2)': x2,
+                'ln_gamma_1': ln_gamma1_var,
+                'ln_gamma_2': ln_gamma2_var
             })
-    
+
     # 创建目录
     os.makedirs('./data/gdinn', exist_ok=True)
-    
+
     # 保存数据
     df = pd.DataFrame(data)
-    
+
     # 分割数据集
     train_df = df.iloc[:200]
     val_df = df.iloc[200:250]
     test_df = df.iloc[250:]
-    
+
     train_df.to_csv('./data/gdinn/train_binary.csv', index=False)
     val_df.to_csv('./data/gdinn/val_binary.csv', index=False)
     test_df.to_csv('./data/gdinn/test_binary.csv', index=False)
-    
+
     print(f"✓ 训练集: {len(train_df)} 样本")
     print(f"✓ 验证集: {len(val_df)} 样本")
     print(f"✓ 测试集: {len(test_df)} 样本")
