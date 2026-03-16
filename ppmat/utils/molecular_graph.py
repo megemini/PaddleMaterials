@@ -38,10 +38,10 @@ from ppmat.models.gdinn.graph_utils import MolecularGraph
 
 class CanonicalAtomFeaturizer:
     """Atom feature encoder that generates 74-dimensional atom features.
-    
+
     This class provides comprehensive atom features including atom type, degree,
     formal charge, valence, hybridization, and other chemical properties.
-    
+
     Features (74 dimensions total):
         - Atom type (one-hot, 44 types)
         - Degree (one-hot, 11 types)
@@ -51,7 +51,7 @@ class CanonicalAtomFeaturizer:
         - Hybridization (one-hot, 5 types)
         - Aromatic (1)
         - Mass (1)
-        - Valence (one-hot, 6 types)
+        - Valence (one-hot, 5 types)
     """
     
     def __init__(self):
@@ -73,8 +73,8 @@ class CanonicalAtomFeaturizer:
         # 5 possible numbers of hydrogens (0-4)
         self.allowable_num_hs = [0, 1, 2, 3, 4]
         
-        # 6 possible valences (0-5)
-        self.allowable_valence = [0, 1, 2, 3, 4, 5]
+        # 5 possible valences (0-4)
+        self.allowable_valence = [0, 1, 2, 3, 4]
         
         # 5 hybridization types
         self.allowable_hybridization = [
