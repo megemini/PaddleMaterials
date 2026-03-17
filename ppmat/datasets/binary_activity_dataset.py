@@ -62,7 +62,8 @@ class BinaryActivityDataset(Dataset):
         "1,1,1-TRICHLOROETHANE", solvent_1, CC(Cl)(Cl)Cl
         ...
 
-    Note: The dataset expects ln_gamma values (natural log) and will convert them to gamma using exp().
+    Note: The dataset contains ln_gamma values (natural log of activity coefficients).
+        These values are kept as-is (ln_gamma), consistent with GDI-NN training format.
 
     Args:
         data_path: Path to CSV file containing binary mixture data
@@ -328,13 +329,14 @@ class BinaryActivityDataset(Dataset):
                 - g2: Molecular graph for solvent 2
                 - x1: Composition of solvent 1 (mole fraction, solv1_x)
                 - x2: Composition of solvent 2 (mole fraction, solv2_x)
-                - gamma1: Activity coefficient for solvent 1 (converted from ln_gamma)
-                - gamma2: Activity coefficient for solvent 2 (converted from ln_gamma)
+                - gamma1: ln(activity coefficient) for solvent 1 (ln_gamma, kept as-is)
+                - gamma2: ln(activity coefficient) for solvent 2 (ln_gamma, kept as-is)
                 - intra_hb1: Intra-molecular hydrogen bonds in solvent 1 (if compute_hb or available)
                 - intra_hb2: Intra-molecular hydrogen bonds in solvent 2 (if compute_hb or available)
                 - inter_hb: Inter-molecular hydrogen bonds (if compute_hb or available)
                 - solv1_id: Solvent 1 ID
                 - solv2_id: Solvent 2 ID
+                - solv1_x: Composition of solvent 1 (same as x1, for GDI-NN compatibility)
         """
         row = self.data[idx]
 
@@ -350,19 +352,21 @@ class BinaryActivityDataset(Dataset):
         x1 = self._parse_value(row['solv1_x'])
         x2 = self._parse_value(row['solv2_x'])
 
-        # Parse ln_gamma values and convert to gamma using exp()
+        # Parse ln_gamma values (GDI-NN stores ln_gamma directly)
+        # Note: The data contains ln(gamma) values, NOT gamma values.
+        # GDI-NN model predicts ln(gamma) directly, so we keep them as-is.
         ln_gamma1 = self._parse_value(row['solv1_gamma'])
         ln_gamma2 = self._parse_value(row['solv2_gamma'])
 
-        # Convert ln_gamma to gamma
-        gamma1 = self._convert_ln_gamma(ln_gamma1)
-        gamma2 = self._convert_ln_gamma(ln_gamma2)
+        # Use ln_gamma directly (consistent with GDI-NN training)
+        gamma1 = ln_gamma1
+        gamma2 = ln_gamma2
 
         # Convert SMILES to molecular graphs
         g1 = self._get_molecular_graph(smiles1)
         g2 = self._get_molecular_graph(smiles2)
 
-        # Build sample dictionary
+        # Build sample dictionary (consistent with GDI-NN format)
         sample = {
             'g1': g1,
             'g2': g2,
@@ -371,7 +375,8 @@ class BinaryActivityDataset(Dataset):
             'gamma1': np.array([[gamma1]], dtype=np.float32),
             'gamma2': np.array([[gamma2]], dtype=np.float32),
             'solv1_id': solv1_id,
-            'solv2_id': solv2_id
+            'solv2_id': solv2_id,
+            'solv1_x': np.array([[x1]], dtype=np.float32),  # GDI-NN uses 'solv1_x' key
         }
 
         # Add hydrogen bond features if available in data
@@ -389,35 +394,6 @@ class BinaryActivityDataset(Dataset):
             sample['inter_hb'] = np.array([[hb_features['inter_hb']]], dtype=np.float32)
 
         return sample
-
-    def _convert_ln_gamma(self, ln_gamma: float) -> float:
-        """Convert ln_gamma to gamma, handling infinite and invalid values.
-
-        Args:
-            ln_gamma: Natural log of activity coefficient
-
-        Returns:
-            Activity coefficient (gamma)
-        """
-        if np.isinf(ln_gamma) or np.isnan(ln_gamma):
-            # Handle extreme values - return a large but finite value
-            return 1e6
-        return np.exp(ln_gamma)
-
-    def _clip_gamma(self, gamma: float, min_val: float = 1e-6, max_val: float = 1e6) -> float:
-        """Clip gamma values to a reasonable range.
-
-        Args:
-            gamma: Gamma value
-            min_val: Minimum value
-            max_val: Maximum value
-
-        Returns:
-            Clipped gamma value
-        """
-        if np.isinf(gamma) or np.isnan(gamma):
-            return max_val
-        return max(min_val, min(max_val, gamma))
 
     def get_solvent_list(self) -> List[str]:
         """Get list of unique solvent IDs in dataset.
@@ -484,29 +460,3 @@ class BinaryActivityDataset(Dataset):
         ]
 
         return [[solv1_match, solv2_match], indices]
-
-
-def collate_solvent_binary(batch: List[Dict]) -> Dict:
-    """Collate function for batching binary solvent data.
-
-    Args:
-        batch: List of sample dictionaries
-
-    Returns:
-        Batched dictionary
-    """
-    keys = list(batch[0].keys())
-    samples = list(map(lambda sample: sample.values(), batch))
-    samples = list(map(list, zip(*samples)))
-
-    batched_sample = {}
-
-    # Handle molecular graphs (g1, g2)
-    batched_sample['g1'] = paddle.stack(samples[0]) if isinstance(samples[0][0], paddle.Tensor) else samples[0]
-    batched_sample['g2'] = paddle.stack(samples[1]) if isinstance(samples[1][0], paddle.Tensor) else samples[1]
-
-    # Handle scalar values
-    for i, key in enumerate(keys[2:]):
-        batched_sample[key] = paddle.to_tensor(samples[i + 2], dtype='float32')
-
-    return batched_sample
