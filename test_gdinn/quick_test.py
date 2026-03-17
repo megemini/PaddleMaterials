@@ -48,13 +48,20 @@ def create_test_data():
     df = df[~df['solv1_gamma'].isna() & ~df['solv2_gamma'].isna()]
     df = df[(abs(df['solv1_gamma']) <= 50) & (abs(df['solv2_gamma']) <= 50)]
 
-    # 取前5000条数据进行测试
+    # 取前5000条数据进行测试（如果数据量足够）
     df = df.head(5000)
 
-    # 分割数据集
-    train_df = df.iloc[:4000]
-    val_df = df.iloc[4000:4500]
-    test_df = df.iloc[4500:5000]
+    # 分割数据集（使用比例：80% 训练，10% 验证，10% 测试）
+    n = len(df)
+    train_ratio = 0.8
+    val_ratio = 0.1
+
+    train_size = int(n * train_ratio)
+    val_size = int(n * val_ratio)
+
+    train_df = df.iloc[:train_size]
+    val_df = df.iloc[train_size:train_size + val_size]
+    test_df = df.iloc[train_size + val_size:]
 
     # 保存数据（GDI-NN 格式）
     train_df.to_csv(os.path.join(output_dir, 'train_binary.csv'), index=False)
