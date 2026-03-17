@@ -15,6 +15,80 @@ import pandas as pd
 # 添加路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'ppmat'))
 
+# ============================================================================
+# 配置路径
+# ============================================================================
+class Config:
+    # 数据目录配置
+    DATASET_DIR = './test_gdinn/dataset'          # 原始数据集目录
+    OUTPUT_DIR = './test_gdinn/data/gdinn'                   # 输出数据目录
+
+    # 原始数据文件
+    SOLVENT_LIST_FILE = 'solvent_list.csv'
+    BINARY_DATA_FILE = 'output_binary_with_inf_all.csv'  # 使用更大的数据文件
+
+    # 输出数据文件
+    TRAIN_BINARY_FILE = 'train_binary.csv'
+    VAL_BINARY_FILE = 'val_binary.csv'
+    TEST_BINARY_FILE = 'test_binary.csv'
+    SOLVENT_LIST_OUTPUT = 'solvent_list.csv'
+
+    # MCM 数据文件
+    TRAIN_MCM_FILE = 'train_mcm.csv'
+    VAL_MCM_FILE = 'val_mcm.csv'
+    TEST_MCM_FILE = 'test_mcm.csv'
+
+    # 数据分割比例
+    TRAIN_RATIO = 0.8
+    VAL_RATIO = 0.1
+    # TEST_RATIO = 0.1 (自动计算)
+
+    # 完整路径
+    @property
+    def solvent_list_path(self):
+        return os.path.join(self.DATASET_DIR, self.SOLVENT_LIST_FILE)
+
+    @property
+    def binary_data_path(self):
+        return os.path.join(self.DATASET_DIR, self.BINARY_DATA_FILE)
+
+    @property
+    def output_dir(self):
+        os.makedirs(self.OUTPUT_DIR, exist_ok=True)
+        return self.OUTPUT_DIR
+
+    @property
+    def train_binary_path(self):
+        return os.path.join(self.OUTPUT_DIR, self.TRAIN_BINARY_FILE)
+
+    @property
+    def val_binary_path(self):
+        return os.path.join(self.OUTPUT_DIR, self.VAL_BINARY_FILE)
+
+    @property
+    def test_binary_path(self):
+        return os.path.join(self.OUTPUT_DIR, self.TEST_BINARY_FILE)
+
+    @property
+    def solvent_list_output_path(self):
+        return os.path.join(self.OUTPUT_DIR, self.SOLVENT_LIST_OUTPUT)
+
+    @property
+    def train_mcm_path(self):
+        return os.path.join(self.OUTPUT_DIR, self.TRAIN_MCM_FILE)
+
+    @property
+    def val_mcm_path(self):
+        return os.path.join(self.OUTPUT_DIR, self.VAL_MCM_FILE)
+
+    @property
+    def test_mcm_path(self):
+        return os.path.join(self.OUTPUT_DIR, self.TEST_MCM_FILE)
+
+
+# 全局配置实例
+config = Config()
+
 
 def create_test_data():
     """创建测试数据（使用 GDI-NN 格式）"""
@@ -22,20 +96,15 @@ def create_test_data():
 
     print("准备测试数据（使用 GDI-NN 格式）...")
 
-    # 路径配置
-    dataset_dir = './test_gdinn/dataset'
-    solvent_list_path = os.path.join(dataset_dir, 'solvent_list.csv')
-    # 使用 GDI-NN 格式的数据文件
-    output_binary_path = os.path.join(dataset_dir, 'output_binary_with_inf_all copy.csv')
-
-    # 创建输出目录
-    output_dir = './data/gdinn'
-    os.makedirs(output_dir, exist_ok=True)
+    # 使用配置路径
+    solvent_list_path = config.solvent_list_path
+    output_binary_path = config.binary_data_path
+    output_dir = config.output_dir
 
     # 复制溶剂列表（直接使用）
     print(f"读取溶剂列表: {solvent_list_path}")
     solvent_df = pd.read_csv(solvent_list_path)
-    solvent_df.to_csv(os.path.join(output_dir, 'solvent_list.csv'), index=False)
+    solvent_df.to_csv(config.solvent_list_output_path, index=False)
     print(f"✓ 溶剂数量: {len(solvent_df)}")
 
     # 读取 GDI-NN 格式数据
@@ -51,27 +120,24 @@ def create_test_data():
     # 取前5000条数据进行测试（如果数据量足够）
     df = df.head(5000)
 
-    # 分割数据集（使用比例：80% 训练，10% 验证，10% 测试）
+    # 分割数据集（使用比例）
     n = len(df)
-    train_ratio = 0.8
-    val_ratio = 0.1
-
-    train_size = int(n * train_ratio)
-    val_size = int(n * val_ratio)
+    train_size = int(n * config.TRAIN_RATIO)
+    val_size = int(n * config.VAL_RATIO)
 
     train_df = df.iloc[:train_size]
     val_df = df.iloc[train_size:train_size + val_size]
     test_df = df.iloc[train_size + val_size:]
 
     # 保存数据（GDI-NN 格式）
-    train_df.to_csv(os.path.join(output_dir, 'train_binary.csv'), index=False)
-    val_df.to_csv(os.path.join(output_dir, 'val_binary.csv'), index=False)
-    test_df.to_csv(os.path.join(output_dir, 'test_binary.csv'), index=False)
+    train_df.to_csv(config.train_binary_path, index=False)
+    val_df.to_csv(config.val_binary_path, index=False)
+    test_df.to_csv(config.test_binary_path, index=False)
 
     print(f"✓ 训练集: {len(train_df)} 样本")
     print(f"✓ 验证集: {len(val_df)} 样本")
     print(f"✓ 测试集: {len(test_df)} 样本")
-    print(f"✓ 数据保存在: {output_dir}/")
+    print(f"✓ 数据保存在: {config.OUTPUT_DIR}/")
 
 
 def test_data_loading():
@@ -87,8 +153,8 @@ def test_data_loading():
 
         # 创建数据集（GDI-NN 格式）
         dataset = BinaryActivityDataset(
-            data_path='./data/gdinn/train_binary.csv',
-            solvent_list_path='./data/gdinn/solvent_list.csv',
+            data_path=config.train_binary_path,
+            solvent_list_path=config.solvent_list_output_path,
             add_self_loop=True,
             preload_graphs=False,
             compute_hb=False
@@ -171,8 +237,8 @@ def test_model_forward():
 
         # 创建数据加载器（GDI-NN 格式）
         dataset = BinaryActivityDataset(
-            data_path='./data/gdinn/train_binary.csv',
-            solvent_list_path='./data/gdinn/solvent_list.csv',
+            data_path=config.train_binary_path,
+            solvent_list_path=config.solvent_list_output_path,
             add_self_loop=True,
             preload_graphs=False,
             compute_hb=False
@@ -257,8 +323,8 @@ def test_training_step():
 
         # 创建数据加载器（GDI-NN 格式）
         dataset = BinaryActivityDataset(
-            data_path='./data/gdinn/train_binary.csv',
-            solvent_list_path='./data/gdinn/solvent_list.csv',
+            data_path=config.train_binary_path,
+            solvent_list_path=config.solvent_list_output_path,
             add_self_loop=True,
             preload_graphs=False,
             compute_hb=False
@@ -348,8 +414,8 @@ def test_solvgnn_xmlp_forward():
 
         # 创建数据加载器（GDI-NN 格式）
         dataset = BinaryActivityDataset(
-            data_path='./data/gdinn/train_binary.csv',
-            solvent_list_path='./data/gdinn/solvent_list.csv',
+            data_path=config.train_binary_path,
+            solvent_list_path=config.solvent_list_output_path,
             add_self_loop=True,
             preload_graphs=False,
             compute_hb=False
@@ -425,8 +491,8 @@ def test_solvgnn_xmlp_training():
 
         # 创建数据加载器（GDI-NN 格式）
         dataset = BinaryActivityDataset(
-            data_path='./data/gdinn/train_binary.csv',
-            solvent_list_path='./data/gdinn/solvent_list.csv',
+            data_path=config.train_binary_path,
+            solvent_list_path=config.solvent_list_output_path,
             add_self_loop=True,
             preload_graphs=False,
             compute_hb=False
@@ -515,8 +581,8 @@ def test_gegnn_forward():
 
         # 创建数据加载器（GDI-NN 格式）
         dataset = BinaryActivityDataset(
-            data_path='./data/gdinn/train_binary.csv',
-            solvent_list_path='./data/gdinn/solvent_list.csv',
+            data_path=config.train_binary_path,
+            solvent_list_path=config.solvent_list_output_path,
             add_self_loop=True,
             preload_graphs=False,
             compute_hb=False
@@ -594,8 +660,8 @@ def test_gegnn_training():
 
         # 创建数据加载器（GDI-NN 格式）
         dataset = BinaryActivityDataset(
-            data_path='./data/gdinn/train_binary.csv',
-            solvent_list_path='./data/gdinn/solvent_list.csv',
+            data_path=config.train_binary_path,
+            solvent_list_path=config.solvent_list_output_path,
             add_self_loop=True,
             preload_graphs=False,
             compute_hb=False
@@ -704,24 +770,24 @@ def create_test_data_mcm():
             })
     
     # 创建目录
-    os.makedirs('./data/gdinn', exist_ok=True)
-    
+    os.makedirs(config.OUTPUT_DIR, exist_ok=True)
+
     # 保存数据
     df = pd.DataFrame(data)
-    
+
     # 分割数据集
     train_df = df.iloc[:400]
     val_df = df.iloc[400:450]
     test_df = df.iloc[450:]
-    
-    train_df.to_csv('./data/gdinn/train_mcm.csv', index=False)
-    val_df.to_csv('./data/gdinn/val_mcm.csv', index=False)
-    test_df.to_csv('./data/gdinn/test_mcm.csv', index=False)
-    
+
+    train_df.to_csv(config.train_mcm_path, index=False)
+    val_df.to_csv(config.val_mcm_path, index=False)
+    test_df.to_csv(config.test_mcm_path, index=False)
+
     print(f"✓ MCM 训练集: {len(train_df)} 样本")
     print(f"✓ MCM 验证集: {len(val_df)} 样本")
     print(f"✓ MCM 测试集: {len(test_df)} 样本")
-    print(f"✓ 数据保存在: ./data/gdinn/")
+    print(f"✓ 数据保存在: {config.OUTPUT_DIR}/")
     
     return 5  # 返回最大 solvent ID
 
@@ -754,7 +820,7 @@ def test_mcm_forward():
         print(f"  参数数量: {param_count}")
         
         # 加载测试数据
-        df = pd.read_csv('./data/gdinn/train_mcm.csv')
+        df = pd.read_csv(config.train_mcm_path)
         
         # 创建 batch data
         batch_size = 32
@@ -816,7 +882,7 @@ def test_mcm_training():
         print(f"✓ MCM 模型创建成功")
         
         # 加载训练数据
-        df = pd.read_csv('./data/gdinn/train_mcm.csv')
+        df = pd.read_csv(config.train_mcm_path)
         
         # 创建优化器
         optimizer = paddle.optimizer.Adam(
@@ -894,8 +960,8 @@ def test_prediction():
 
         # 创建测试数据加载器（GDI-NN 格式）
         dataset = BinaryActivityDataset(
-            data_path='./data/gdinn/test_binary.csv',
-            solvent_list_path='./data/gdinn/solvent_list.csv',
+            data_path=config.test_binary_path,
+            solvent_list_path=config.solvent_list_output_path,
             add_self_loop=True,
             preload_graphs=False,
             compute_hb=False
