@@ -87,22 +87,22 @@ class MLPModule(nn.Layer):
     
     def __init__(self, dim_in: int, dim_hidden: int, dropout: float = 0.05):
         super().__init__()
-        
+
         self.embedding = nn.Embedding(dim_in, dim_hidden)
         self.dropout = nn.Dropout(dropout)
-        
-        # Build MLP layers: Embedding -> Linear -> ReLU -> Dropout -> Linear -> ReLU -> Dropout -> Linear -> ReLU -> Dropout -> Linear -> ReLU
+
+        # Build MLP layers matching PyTorch get_mlp_module:
+        # Embedding -> ReLU -> Dropout -> Linear -> ReLU -> Dropout -> Linear -> ReLU -> Dropout -> Linear -> ReLU
         self.linear1 = nn.Linear(dim_hidden, dim_hidden)
         self.linear2 = nn.Linear(dim_hidden, dim_hidden)
         self.linear3 = nn.Linear(dim_hidden, dim_hidden)
-        self.linear4 = nn.Linear(dim_hidden, dim_hidden)
-    
+
     def forward(self, x: paddle.Tensor) -> paddle.Tensor:
         """Forward pass.
-        
+
         Args:
             x: Input tensor of indices [batch_size]
-        
+
         Returns:
             Output tensor [batch_size, dim_hidden]
         """
@@ -110,26 +110,21 @@ class MLPModule(nn.Layer):
         x = self.embedding(x)  # [batch_size, dim_hidden]
         x = F.relu(x)
         x = self.dropout(x)
-        
+
         # Layer 1
         x = self.linear1(x)
         x = F.relu(x)
         x = self.dropout(x)
-        
+
         # Layer 2
         x = self.linear2(x)
         x = F.relu(x)
         x = self.dropout(x)
-        
+
         # Layer 3
         x = self.linear3(x)
         x = F.relu(x)
-        x = self.dropout(x)
-        
-        # Layer 4
-        x = self.linear4(x)
-        x = F.relu(x)
-        
+
         return x
 
 

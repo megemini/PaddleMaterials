@@ -76,6 +76,86 @@ def set_random_seed(seed=42):
     torch.manual_seed(seed)
 
 
+def torch_to_paddle_param(torch_param, transpose=False):
+    """将 PyTorch 参数转换为 Paddle Tensor"""
+    np_val = torch_param.detach().cpu().numpy()
+    if transpose and np_val.ndim == 2:
+        np_val = np_val.T  # PyTorch Linear: [out, in] -> Paddle Linear: [in, out]
+    return paddle.to_tensor(np_val)
+
+
+def sync_gnn_weights(torch_model, paddle_model):
+    """将 PyTorch GNN 模型权重同步到 Paddle GNN 模型"""
+    # GraphConv: weight [in, out], bias [out] — same layout
+    paddle_model.conv1.weight.set_value(torch_to_paddle_param(torch_model.conv1.weight))
+    paddle_model.conv1.bias.set_value(torch_to_paddle_param(torch_model.conv1.bias))
+    paddle_model.conv2.weight.set_value(torch_to_paddle_param(torch_model.conv2.weight))
+    paddle_model.conv2.bias.set_value(torch_to_paddle_param(torch_model.conv2.bias))
+
+    # MPNNConv / MPNNconv
+    tc = torch_model.global_conv1
+    pc = paddle_model.global_conv
+
+    # project_node_feats: Sequential(Linear, Activation)
+    pc.project_node_feats[0].weight.set_value(torch_to_paddle_param(tc.project_node_feats[0].weight, transpose=True))
+    pc.project_node_feats[0].bias.set_value(torch_to_paddle_param(tc.project_node_feats[0].bias))
+
+    # gnn_layer.edge_func: Sequential(Linear, Activation, Linear)
+    pc.gnn_layer.edge_func[0].weight.set_value(torch_to_paddle_param(tc.gnn_layer.edge_func[0].weight, transpose=True))
+    pc.gnn_layer.edge_func[0].bias.set_value(torch_to_paddle_param(tc.gnn_layer.edge_func[0].bias))
+    pc.gnn_layer.edge_func[2].weight.set_value(torch_to_paddle_param(tc.gnn_layer.edge_func[2].weight, transpose=True))
+    pc.gnn_layer.edge_func[2].bias.set_value(torch_to_paddle_param(tc.gnn_layer.edge_func[2].bias))
+
+    # gnn_layer.bias
+    pc.gnn_layer.bias.set_value(torch_to_paddle_param(tc.gnn_layer.bias))
+
+    # GRU (PyTorch) -> GRUCell (Paddle): same weight layout [3*hidden, input/hidden]
+    pc.gru_cell.weight_ih.set_value(torch_to_paddle_param(tc.gru.weight_ih_l0))
+    pc.gru_cell.weight_hh.set_value(torch_to_paddle_param(tc.gru.weight_hh_l0))
+    pc.gru_cell.bias_ih.set_value(torch_to_paddle_param(tc.gru.bias_ih_l0))
+    pc.gru_cell.bias_hh.set_value(torch_to_paddle_param(tc.gru.bias_hh_l0))
+
+    # Classifier Linear layers: transpose weights
+    paddle_model.classify1.weight.set_value(torch_to_paddle_param(torch_model.classify1.weight, transpose=True))
+    paddle_model.classify1.bias.set_value(torch_to_paddle_param(torch_model.classify1.bias))
+    paddle_model.classify2.weight.set_value(torch_to_paddle_param(torch_model.classify2.weight, transpose=True))
+    paddle_model.classify2.bias.set_value(torch_to_paddle_param(torch_model.classify2.bias))
+    paddle_model.classify3.weight.set_value(torch_to_paddle_param(torch_model.classify3.weight, transpose=True))
+    paddle_model.classify3.bias.set_value(torch_to_paddle_param(torch_model.classify3.bias))
+
+
+def sync_mcm_weights(torch_model, paddle_model):
+    """将 PyTorch MCM 模型权重同步到 Paddle MCM 模型"""
+    # Embedding: solvent_emb[0][0] -> solvent_emb.embedding
+    torch_emb_seq = torch_model.solvent_emb[0]
+    paddle_model.solvent_emb.embedding.weight.set_value(
+        torch_to_paddle_param(torch_emb_seq[0].weight))
+
+    # Linear layers: solvent_emb[0][3,6,9] -> solvent_emb.linear1,2,3
+    paddle_model.solvent_emb.linear1.weight.set_value(
+        torch_to_paddle_param(torch_emb_seq[3].weight, transpose=True))
+    paddle_model.solvent_emb.linear1.bias.set_value(
+        torch_to_paddle_param(torch_emb_seq[3].bias))
+    paddle_model.solvent_emb.linear2.weight.set_value(
+        torch_to_paddle_param(torch_emb_seq[6].weight, transpose=True))
+    paddle_model.solvent_emb.linear2.bias.set_value(
+        torch_to_paddle_param(torch_emb_seq[6].bias))
+    paddle_model.solvent_emb.linear3.weight.set_value(
+        torch_to_paddle_param(torch_emb_seq[9].weight, transpose=True))
+    paddle_model.solvent_emb.linear3.bias.set_value(
+        torch_to_paddle_param(torch_emb_seq[9].bias))
+
+    # layers_end: two Sequential branches
+    for branch_idx in range(2):
+        torch_branch = torch_model.layers_end[branch_idx]
+        paddle_branch = paddle_model.layers_end[branch_idx]
+        # Copy all Linear layers
+        for t_layer, p_layer in zip(torch_branch, paddle_branch):
+            if hasattr(t_layer, 'weight') and hasattr(p_layer, 'weight'):
+                p_layer.weight.set_value(torch_to_paddle_param(t_layer.weight, transpose=True))
+                p_layer.bias.set_value(torch_to_paddle_param(t_layer.bias))
+
+
 def prepare_data():
     """准备真实测试数据"""
     print("准备测试数据...")
@@ -167,7 +247,10 @@ def test_gnn_alignment():
         )
         torch_model = torch_model.cuda()
         torch_model.eval()
-        
+
+        # 同步权重: PyTorch -> Paddle
+        sync_gnn_weights(torch_model, paddle_model)
+
         # 获取一个 batch
         for batch_idx, paddle_batch in enumerate(paddle_loader):
             if batch_idx >= 1:
@@ -182,9 +265,8 @@ def test_gnn_alignment():
             g1_dgl = paddle_graph_to_dgl(g1_paddle)
             g2_dgl = paddle_graph_to_dgl(g2_paddle)
             
-            # 创建 empty solvsys
-            num_nodes = 2 * config.BATCH_SIZE
-            empty_solvsys = create_empty_solvsys(num_nodes)
+            # 创建 empty solvsys (匹配原始 generate_solvsys)
+            empty_solvsys = create_empty_solvsys(config.BATCH_SIZE)
             
             # PyTorch 前向传播 (solv1_x 需要 1D tensor)
             torch_batch = {
@@ -199,16 +281,17 @@ def test_gnn_alignment():
             with torch.no_grad():
                 torch_output = torch_model(torch_batch, empty_solvsys, gamma_grad=False)
             
-            torch_gamma1 = torch_output[:, 0].numpy()
-            torch_gamma2 = torch_output[:, 1].numpy()
+            torch_gamma1 = torch_output[:, 0].cpu().numpy()
+            torch_gamma2 = torch_output[:, 1].cpu().numpy()
             
             # Paddle 前向传播
             with paddle.no_grad():
                 paddle_output = paddle_model(paddle_batch)
             
             paddle_pred = paddle_output['pred_dict']
-            paddle_gamma1 = paddle_pred['gamma1'].numpy()
-            paddle_gamma2 = paddle_pred['gamma2'].numpy()
+            # 使用 ln_gamma 进行比较 (PyTorch 输出的是 ln_gamma)
+            paddle_gamma1 = paddle_pred['ln_gamma1'].numpy()
+            paddle_gamma2 = paddle_pred['ln_gamma2'].numpy()
             
             # 比较
             diff_gamma1 = np.abs(paddle_gamma1.flatten() - torch_gamma1)
@@ -270,9 +353,27 @@ def paddle_graph_to_dgl(paddle_g):
     return g
 
 
-def create_empty_solvsys(num_nodes):
-    """创建空的溶剂系统图 (GPU)"""
-    g = dgl.graph(([], []), num_nodes=num_nodes)
+def create_empty_solvsys(batch_size):
+    """创建溶剂系统图 (GPU)，匹配原始 generate_solvsys 方法。
+
+    原始代码:
+        solvsys.add_nodes(n_solv * batch_size)
+        src = arange(batch_size), dst = arange(batch_size, 2*batch_size)
+        add_edges(cat(src, dst), cat(dst, src))  # bidirectional
+        add_edges(arange(2*batch), arange(2*batch))  # self-loops
+    """
+    n_solv = 2
+    num_nodes = n_solv * batch_size
+
+    src_range = torch.arange(batch_size)
+    dst_range = torch.arange(batch_size, num_nodes)
+    all_range = torch.arange(num_nodes)
+
+    # Bidirectional edges + self-loops
+    edge_src = torch.cat([torch.cat([src_range, dst_range]), all_range])
+    edge_dst = torch.cat([torch.cat([dst_range, src_range]), all_range])
+
+    g = dgl.graph((edge_src, edge_dst), num_nodes=num_nodes)
     return g.to("cuda:0")
 
 
@@ -320,7 +421,10 @@ def test_mcm_alignment():
         )
         torch_model = torch_model.cuda()
         torch_model.eval()
-        
+
+        # 同步权重: PyTorch -> Paddle
+        sync_mcm_weights(torch_model, paddle_model)
+
         # 准备测试数据 (从真实数据中取)
         batch_size = min(config.BATCH_SIZE, len(df))
         
