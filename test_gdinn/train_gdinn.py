@@ -70,14 +70,23 @@ def parse_args():
     return parser.parse_args()
 
 
-def create_dataloader(data_path, batch_size, shuffle=True, num_workers=4):
-    """创建数据加载器"""
+def create_dataloader(data_path, solvent_list_path, batch_size, shuffle=True, num_workers=4):
+    """创建数据加载器
+
+    Args:
+        data_path: Path to binary activity data CSV
+        solvent_list_path: Path to solvent list CSV
+        batch_size: Batch size
+        shuffle: Whether to shuffle
+        num_workers: Number of workers
+    """
     from ppmat.datasets import BinaryActivityDataset
     from paddle.io import DataLoader, BatchSampler
-    
-    # 创建数据集
+
+    # 创建数据集（BinaryActivityDataset 会自动检测并转换原始数据格式）
     dataset = BinaryActivityDataset(
         data_path=data_path,
+        solvent_list_path=solvent_list_path,
         add_self_loop=True,
         preload_graphs=False,
         compute_hb=False
@@ -127,15 +136,18 @@ def train(args):
     
     # 创建数据加载器
     print("\n[1/5] 创建数据加载器...")
+    solvent_list_path = './data/gdinn/solvent_list.csv'
     try:
         train_loader = create_dataloader(
             args.train_data,
+            solvent_list_path,
             args.batch_size,
             shuffle=True,
             num_workers=4
         )
         val_loader = create_dataloader(
             args.val_data,
+            solvent_list_path,
             args.batch_size,
             shuffle=False,
             num_workers=2

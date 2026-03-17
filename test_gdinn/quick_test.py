@@ -10,74 +10,61 @@ import os
 import sys
 import paddle
 import numpy as np
+import pandas as pd
 
 # 添加路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'ppmat'))
 
 
 def create_test_data():
-    """创建测试数据（使用真实数据格式）"""
+    """创建测试数据（使用 GDI-NN 格式）"""
     import pandas as pd
 
-    print("创建测试数据...")
+    print("准备测试数据（使用 GDI-NN 格式）...")
 
-    # 创建简单的测试数据
-    data = []
+    # 路径配置
+    dataset_dir = './test_gdinn/dataset'
+    solvent_list_path = os.path.join(dataset_dir, 'solvent_list.csv')
+    # 使用 GDI-NN 格式的数据文件
+    output_binary_path = os.path.join(dataset_dir, 'output_binary_with_inf_all copy.csv')
 
-    # 添加一些常见的溶剂组合
-    solvent_pairs = [
-        # Water + Ethanol
-        ("O", "CCO", 298.15, 0.5, 1.2, 0.8),
-        # Methanol + Ethanol
-        ("CO", "CCO", 298.15, 0.5, 1.1, 0.9),
-        # Water + Methanol
-        ("O", "CO", 298.15, 0.5, 1.3, 0.7),
-    ]
+    # 创建输出目录
+    output_dir = './data/gdinn'
+    os.makedirs(output_dir, exist_ok=True)
 
-    # 重复生成更多数据
-    for solv1, solv2, temp, x1, gamma1, gamma2 in solvent_pairs:
-        for _ in range(100):  # 每个组合生成100个样本
-            # 添加一些随机变化
-            x1_var = np.clip(x1 + np.random.normal(0, 0.1), 0.01, 0.99)
-            x2 = 1.0 - x1_var
+    # 复制溶剂列表（直接使用）
+    print(f"读取溶剂列表: {solvent_list_path}")
+    solvent_df = pd.read_csv(solvent_list_path)
+    solvent_df.to_csv(os.path.join(output_dir, 'solvent_list.csv'), index=False)
+    print(f"✓ 溶剂数量: {len(solvent_df)}")
 
-            # 简单的活度系数模拟
-            gamma1_var = gamma1 * (1 + 0.1 * np.random.randn())
-            gamma2_var = gamma2 * (1 + 0.1 * np.random.randn())
+    # 读取 GDI-NN 格式数据
+    print(f"读取数据: {output_binary_path}")
+    df = pd.read_csv(output_binary_path)
+    print(f"✓ 数据量: {len(df)}")
 
-            # 转换为 ln_gamma
-            ln_gamma1_var = np.log(abs(gamma1_var))
-            ln_gamma2_var = np.log(abs(gamma2_var))
+    # GDI-NN 格式：solv1_gamma, solv2_gamma 存储 ln_gamma
+    # 过滤极端值
+    df = df[~df['solv1_gamma'].isna() & ~df['solv2_gamma'].isna()]
+    df = df[(abs(df['solv1_gamma']) <= 50) & (abs(df['solv2_gamma']) <= 50)]
 
-            data.append({
-                'SMILES_x': solv1,
-                'SMILES_y': solv2,
-                'temperature (K)': temp + np.random.normal(0, 5),
-                'x(1)': x1_var,
-                'x(2)': x2,
-                'ln_gamma_1': ln_gamma1_var,
-                'ln_gamma_2': ln_gamma2_var
-            })
-
-    # 创建目录
-    os.makedirs('./data/gdinn', exist_ok=True)
-
-    # 保存数据
-    df = pd.DataFrame(data)
+    # 取前5000条数据进行测试
+    df = df.head(5000)
 
     # 分割数据集
-    train_df = df.iloc[:200]
-    val_df = df.iloc[200:250]
-    test_df = df.iloc[250:]
+    train_df = df.iloc[:4000]
+    val_df = df.iloc[4000:4500]
+    test_df = df.iloc[4500:5000]
 
-    train_df.to_csv('./data/gdinn/train_binary.csv', index=False)
-    val_df.to_csv('./data/gdinn/val_binary.csv', index=False)
-    test_df.to_csv('./data/gdinn/test_binary.csv', index=False)
+    # 保存数据（GDI-NN 格式）
+    train_df.to_csv(os.path.join(output_dir, 'train_binary.csv'), index=False)
+    val_df.to_csv(os.path.join(output_dir, 'val_binary.csv'), index=False)
+    test_df.to_csv(os.path.join(output_dir, 'test_binary.csv'), index=False)
 
     print(f"✓ 训练集: {len(train_df)} 样本")
     print(f"✓ 验证集: {len(val_df)} 样本")
     print(f"✓ 测试集: {len(test_df)} 样本")
-    print(f"✓ 数据保存在: ./data/gdinn/")
+    print(f"✓ 数据保存在: {output_dir}/")
 
 
 def test_data_loading():
@@ -85,15 +72,16 @@ def test_data_loading():
     print("\n" + "=" * 80)
     print("测试数据加载")
     print("=" * 80)
-    
+
     try:
         from ppmat.datasets import BinaryActivityDataset
         from paddle.io import DataLoader, BatchSampler
         from ppmat.datasets.collate_fn import DefaultCollator
-        
-        # 创建数据集
+
+        # 创建数据集（GDI-NN 格式）
         dataset = BinaryActivityDataset(
             data_path='./data/gdinn/train_binary.csv',
+            solvent_list_path='./data/gdinn/solvent_list.csv',
             add_self_loop=True,
             preload_graphs=False,
             compute_hb=False
@@ -174,9 +162,10 @@ def test_model_forward():
         param_count = sum(p.numel().item() for p in model.parameters())
         print(f"  参数数量: {param_count}")
 
-        # 创建数据加载器
+        # 创建数据加载器（GDI-NN 格式）
         dataset = BinaryActivityDataset(
             data_path='./data/gdinn/train_binary.csv',
+            solvent_list_path='./data/gdinn/solvent_list.csv',
             add_self_loop=True,
             preload_graphs=False,
             compute_hb=False
@@ -188,7 +177,7 @@ def test_model_forward():
             shuffle=False,
             drop_last=True
         )
-        
+
         collator = DefaultCollator()
         dataloader = DataLoader(
             dataset=dataset,
@@ -258,15 +247,16 @@ def test_training_step():
         )
 
         print(f"✓ 模型和损失函数创建成功")
-        
-        # 创建数据加载器
+
+        # 创建数据加载器（GDI-NN 格式）
         dataset = BinaryActivityDataset(
             data_path='./data/gdinn/train_binary.csv',
+            solvent_list_path='./data/gdinn/solvent_list.csv',
             add_self_loop=True,
             preload_graphs=False,
             compute_hb=False
         )
-        
+
         sampler = BatchSampler(
             dataset=dataset,
             batch_size=32,
@@ -349,9 +339,10 @@ def test_solvgnn_xmlp_forward():
         param_count = sum(p.numel().item() for p in model.parameters())
         print(f"  参数数量: {param_count}")
 
-        # 创建数据加载器
+        # 创建数据加载器（GDI-NN 格式）
         dataset = BinaryActivityDataset(
             data_path='./data/gdinn/train_binary.csv',
+            solvent_list_path='./data/gdinn/solvent_list.csv',
             add_self_loop=True,
             preload_graphs=False,
             compute_hb=False
@@ -363,7 +354,7 @@ def test_solvgnn_xmlp_forward():
             shuffle=False,
             drop_last=True
         )
-        
+
         collator = DefaultCollator()
         dataloader = DataLoader(
             dataset=dataset,
@@ -424,22 +415,23 @@ def test_solvgnn_xmlp_training():
         )
 
         print(f"✓ SolvGNNxMLP 模型创建成功")
-        
-        # 创建数据加载器
+
+        # 创建数据加载器（GDI-NN 格式）
         dataset = BinaryActivityDataset(
             data_path='./data/gdinn/train_binary.csv',
+            solvent_list_path='./data/gdinn/solvent_list.csv',
             add_self_loop=True,
             preload_graphs=False,
             compute_hb=False
         )
-        
+
         sampler = BatchSampler(
             dataset=dataset,
             batch_size=32,
             shuffle=True,
             drop_last=True
         )
-        
+
         collator = DefaultCollator()
         dataloader = DataLoader(
             dataset=dataset,
@@ -514,9 +506,10 @@ def test_gegnn_forward():
         param_count = sum(p.numel().item() for p in model.parameters())
         print(f"  参数数量: {param_count}")
 
-        # 创建数据加载器
+        # 创建数据加载器（GDI-NN 格式）
         dataset = BinaryActivityDataset(
             data_path='./data/gdinn/train_binary.csv',
+            solvent_list_path='./data/gdinn/solvent_list.csv',
             add_self_loop=True,
             preload_graphs=False,
             compute_hb=False
@@ -528,7 +521,7 @@ def test_gegnn_forward():
             shuffle=False,
             drop_last=True
         )
-        
+
         collator = DefaultCollator()
         dataloader = DataLoader(
             dataset=dataset,
@@ -591,22 +584,23 @@ def test_gegnn_training():
         )
 
         print(f"✓ GEGNN 模型创建成功")
-        
-        # 创建数据加载器
+
+        # 创建数据加载器（GDI-NN 格式）
         dataset = BinaryActivityDataset(
             data_path='./data/gdinn/train_binary.csv',
+            solvent_list_path='./data/gdinn/solvent_list.csv',
             add_self_loop=True,
             preload_graphs=False,
             compute_hb=False
         )
-        
+
         sampler = BatchSampler(
             dataset=dataset,
             batch_size=32,
             shuffle=True,
             drop_last=True
         )
-        
+
         collator = DefaultCollator()
         dataloader = DataLoader(
             dataset=dataset,
@@ -614,7 +608,7 @@ def test_gegnn_training():
             num_workers=0,
             collate_fn=collator
         )
-        
+
         # 创建优化器
         optimizer = paddle.optimizer.Adam(
             parameters=model.parameters(),
@@ -890,22 +884,23 @@ def test_prediction():
             num_step_message_passing=1,
             pinn_lambda=1.0
         )
-        
-        # 创建测试数据加载器
+
+        # 创建测试数据加载器（GDI-NN 格式）
         dataset = BinaryActivityDataset(
             data_path='./data/gdinn/test_binary.csv',
+            solvent_list_path='./data/gdinn/solvent_list.csv',
             add_self_loop=True,
             preload_graphs=False,
             compute_hb=False
         )
-        
+
         sampler = BatchSampler(
             dataset=dataset,
             batch_size=32,
             shuffle=False,
             drop_last=False
         )
-        
+
         collator = DefaultCollator()
         dataloader = DataLoader(
             dataset=dataset,
@@ -913,7 +908,7 @@ def test_prediction():
             num_workers=0,
             collate_fn=collator
         )
-        
+
         # 测试预测
         model.eval()
         
