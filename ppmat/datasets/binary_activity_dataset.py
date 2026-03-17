@@ -39,7 +39,7 @@ from paddle.io import Dataset
 
 from ppmat.models.gdinn.graph_utils import MolecularGraph
 from ppmat.datasets.build_molecule import BuildMolecule
-from ppmat.utils.molecular_graph import (
+from ppmat.models.gdinn.molecular_graph import (
     mol_to_bigraph,
     smiles_to_bigraph,
     compute_hydrogen_bond_features
