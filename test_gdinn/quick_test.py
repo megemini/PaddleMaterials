@@ -156,8 +156,7 @@ def test_data_loading():
             data_path=config.train_binary_path,
             solvent_list_path=config.solvent_list_output_path,
             add_self_loop=True,
-            preload_graphs=False,
-            compute_hb=False
+            preload_graphs=False
         )
         
         print(f"✓ 数据集创建成功")
@@ -240,8 +239,7 @@ def test_model_forward():
             data_path=config.train_binary_path,
             solvent_list_path=config.solvent_list_output_path,
             add_self_loop=True,
-            preload_graphs=False,
-            compute_hb=False
+            preload_graphs=False
         )
 
         sampler = BatchSampler(
@@ -326,8 +324,7 @@ def test_training_step():
             data_path=config.train_binary_path,
             solvent_list_path=config.solvent_list_output_path,
             add_self_loop=True,
-            preload_graphs=False,
-            compute_hb=False
+            preload_graphs=False
         )
 
         sampler = BatchSampler(
@@ -417,8 +414,7 @@ def test_solvgnn_xmlp_forward():
             data_path=config.train_binary_path,
             solvent_list_path=config.solvent_list_output_path,
             add_self_loop=True,
-            preload_graphs=False,
-            compute_hb=False
+            preload_graphs=False
         )
 
         sampler = BatchSampler(
@@ -494,8 +490,7 @@ def test_solvgnn_xmlp_training():
             data_path=config.train_binary_path,
             solvent_list_path=config.solvent_list_output_path,
             add_self_loop=True,
-            preload_graphs=False,
-            compute_hb=False
+            preload_graphs=False
         )
 
         sampler = BatchSampler(
@@ -584,8 +579,7 @@ def test_gegnn_forward():
             data_path=config.train_binary_path,
             solvent_list_path=config.solvent_list_output_path,
             add_self_loop=True,
-            preload_graphs=False,
-            compute_hb=False
+            preload_graphs=False
         )
 
         sampler = BatchSampler(
@@ -663,8 +657,7 @@ def test_gegnn_training():
             data_path=config.train_binary_path,
             solvent_list_path=config.solvent_list_output_path,
             add_self_loop=True,
-            preload_graphs=False,
-            compute_hb=False
+            preload_graphs=False
         )
 
         sampler = BatchSampler(
@@ -963,8 +956,7 @@ def test_prediction():
             data_path=config.test_binary_path,
             solvent_list_path=config.solvent_list_output_path,
             add_self_loop=True,
-            preload_graphs=False,
-            compute_hb=False
+            preload_graphs=False
         )
 
         sampler = BatchSampler(

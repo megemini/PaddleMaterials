@@ -205,8 +205,7 @@ def test_gnn_alignment():
             data_path=config.binary_data_path,
             solvent_list_path=config.solvent_list_path,
             add_self_loop=True,
-            preload_graphs=False,
-            compute_hb=False
+            preload_graphs=False
         )
         
         # 创建采样器

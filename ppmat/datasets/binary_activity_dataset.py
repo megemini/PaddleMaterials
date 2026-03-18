@@ -74,7 +74,11 @@ class BinaryActivityDataset(Dataset):
         graph_converter: Function to convert molecules to graphs (default: mol_to_bigraph)
         add_self_loop: Whether to add self-loops to graphs (default: True)
         preload_graphs: Whether to preload all graphs into memory (default: False)
-        compute_hb: Whether to compute hydrogen bond features (default: False)
+        compute_hb: Whether to compute hydrogen bond features using RDKit descriptors
+                   (default: False). These features match GDI-NN's implementation:
+                   - intra_hb1: min(HBA, HBD) for solvent 1
+                   - intra_hb2: min(HBA, HBD) for solvent 2
+                   - inter_hb: min(HBA1, HBD2) + min(HBD1, HBA2)
     """
 
     def __init__(
@@ -95,7 +99,7 @@ class BinaryActivityDataset(Dataset):
             graph_converter: Function to convert molecules to graphs (default: mol_to_bigraph)
             add_self_loop: Whether to add self-loops to graphs (default: True)
             preload_graphs: Whether to preload all graphs into memory (default: False)
-            compute_hb: Whether to compute hydrogen bond features (default: False)
+            compute_hb: Whether to compute hydrogen bond features using RDKit descriptors (default: False)
         """
         super().__init__()
         self.data_path = data_path
@@ -307,9 +311,9 @@ class BinaryActivityDataset(Dataset):
                 - x2: Composition of solvent 2 (mole fraction, solv2_x)
                 - gamma1: ln(activity coefficient) for solvent 1 (ln_gamma, kept as-is)
                 - gamma2: ln(activity coefficient) for solvent 2 (ln_gamma, kept as-is)
-                - intra_hb1: Intra-molecular hydrogen bonds in solvent 1 (if compute_hb)
-                - intra_hb2: Intra-molecular hydrogen bonds in solvent 2 (if compute_hb)
-                - inter_hb: Inter-molecular hydrogen bonds (if compute_hb)
+                - intra_hb1: Intra-molecular hydrogen bonding capacity for solvent 1 (if compute_hb)
+                - intra_hb2: Intra-molecular hydrogen bonding capacity for solvent 2 (if compute_hb)
+                - inter_hb: Inter-molecular hydrogen bonding capacity (if compute_hb)
                 - solv1_id: Solvent 1 ID
                 - solv2_id: Solvent 2 ID
                 - solv1_x: Composition of solvent 1 (same as x1, for GDI-NN compatibility)
@@ -357,7 +361,7 @@ class BinaryActivityDataset(Dataset):
 
         # Add hydrogen bond features if compute_hb is enabled
         if self.compute_hb:
-            # Compute hydrogen bond features on the fly
+            # Compute hydrogen bond features using RDKit descriptors (GDI-NN compatible)
             mol1 = self.build_molecule(smiles1)
             mol2 = self.build_molecule(smiles2)
             hb_features = compute_hydrogen_bond_features(mol1, mol2)

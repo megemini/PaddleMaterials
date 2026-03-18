@@ -22,13 +22,8 @@ compatible with PGL, replacing DGL's mol_to_bigraph functionality.
 from typing import Dict, List, Optional, Union, Callable
 from collections import defaultdict
 
-try:
-    from rdkit import Chem
-    from rdkit.Chem import AllChem
-    RDKIT_AVAILABLE = True
-except ImportError:
-    RDKIT_AVAILABLE = False
-    Chem = None
+from rdkit import Chem
+from rdkit.Chem import AllChem
 
 import paddle
 import numpy as np
@@ -94,10 +89,6 @@ class CanonicalAtomFeaturizer:
         Returns:
             Dictionary with "h" key containing atom features of shape [num_atoms, 75]
         """
-        if not RDKIT_AVAILABLE:
-            raise ImportError("RDKit is required for molecular graph construction. "
-                            "Please install it with: pip install rdkit")
-        
         num_atoms = mol.GetNumAtoms()
         features = np.zeros((num_atoms, 75), dtype=np.float32)
         
@@ -120,7 +111,7 @@ class CanonicalAtomFeaturizer:
         feature = np.zeros(75, dtype=np.float32)
         idx = 0
         
-        # 1. Atom type (one-hot, 44)
+        # 1. Atom type (one-hot, 45)
         atom_type = atom.GetSymbol()
         for i, t in enumerate(self.allowable_atom_types):
             if atom_type == t:
@@ -204,10 +195,6 @@ class CanonicalBondFeaturizer:
         Returns:
             Dictionary with "e" key containing bond features of shape [num_edges, 12]
         """
-        if not RDKIT_AVAILABLE:
-            raise ImportError("RDKit is required for molecular graph construction. "
-                            "Please install it with: pip install rdkit")
-        
         num_atoms = mol.GetNumAtoms()
         
         # Collect bond information
@@ -296,203 +283,238 @@ class CanonicalBondFeaturizer:
 
 def mol_to_bigraph(
     mol: 'Chem.Mol',
-    add_self_loop: bool = True,
+    add_self_loop: bool = False,
     node_featurizer: Optional[Callable] = None,
     edge_featurizer: Optional[Callable] = None,
-    canonical_atom_order: bool = False
+    canonical_atom_order: bool = True,
+    explicit_hydrogens: bool = False,
+    num_virtual_nodes: int = 0
 ) -> MolecularGraph:
     """Convert RDKit molecule to MolecularGraph.
-    
+
     This function replaces DGL's mol_to_bigraph for PaddlePaddle.
-    
-    Args:
-        mol: RDKit molecule object
-        add_self_loop: Whether to add self-loops
-        node_featurizer: Atom featurizer (default: CanonicalAtomFeaturizer)
-        edge_featurizer: Bond featurizer (default: CanonicalBondFeaturizer)
-        canonical_atom_order: Whether to use canonical atom ordering
-        
-    Returns:
-        MolecularGraph object
-        
-    Example:
-        >>> from rdkit import Chem
-        >>> mol = Chem.MolFromSmiles('CCO')
-        >>> graph = mol_to_bigraph(mol)
+
+    Parameters
+    ----------
+    mol : rdkit.Chem.rdchem.Mol
+        RDKit molecule holder
+    add_self_loop : bool
+        Whether to add self loops in DGLGraphs. Default to False.
+    node_featurizer : callable, rdkit.Chem.rdchem.Mol -> dict
+        Featurization for nodes like atoms in a molecule, which can be used to update
+        ndata for a DGLGraph. Default to None.
+    edge_featurizer : callable, rdkit.Chem.rdchem.Mol -> dict
+        Featurization for edges like bonds in a molecule, which can be used to update
+        edata for a DGLGraph. Default to None.
+    canonical_atom_order : bool
+        Whether to use a canonical order of atoms returned by RDKit. Setting it
+        to true might change the order of atoms in the graph constructed. Default
+        to True.
+    explicit_hydrogens : bool
+        Whether to explicitly represent hydrogens as nodes in the graph. If True,
+        it will call rdkit.Chem.AddHs(mol). Default to False.
+    num_virtual_nodes : int
+        The number of virtual nodes to add. The virtual nodes will be connected to
+        all real nodes with virtual edges. If the returned graph has any node/edge
+        feature, an additional column of binary values will be used for each feature
+        to indicate the identity of virtual node/edges. The features of the virtual
+        nodes/edges will be zero vectors except for the additional column. Default to 0.
+
+    Returns
+    -------
+    DGLGraph or None
+        Bi-directed DGLGraph for the molecule if :attr:`mol` is valid and None otherwise.
     """
-    if not RDKIT_AVAILABLE:
-        raise ImportError("RDKit is required for molecular graph construction. "
-                        "Please install it with: pip install rdkit")
-    
     if mol is None:
         raise ValueError("Input molecule is None")
-    
-    # Sanitize molecule
-    Chem.SanitizeMol(mol)
-    
+
+    # Whether to have hydrogen atoms as explicit nodes
+    if explicit_hydrogens:
+        mol = Chem.AddHs(mol)
+
     # Apply canonical ordering if requested
     if canonical_atom_order:
         mol = Chem.RenumberAtoms(mol, list(range(mol.GetNumAtoms())))
-    
+
     # Default featurizers
     if node_featurizer is None:
         node_featurizer = CanonicalAtomFeaturizer()
     if edge_featurizer is None:
         edge_featurizer = CanonicalBondFeaturizer(self_loop=add_self_loop)
-    
+
     # Generate node features
     node_feat = node_featurizer(mol)
-    
+
     # Generate edge features
     edge_data = edge_featurizer(mol)
     src = edge_data["src"]
     dst = edge_data["dst"]
     edge_feat = {"e": edge_data["e"]}
-    
+
+    # Handle virtual nodes
+    if num_virtual_nodes > 0:
+        num_real_nodes = mol.GetNumAtoms()
+        real_nodes = list(range(num_real_nodes))
+
+        # Add virtual node indices to node features
+        for feat_name in node_feat.keys():
+            real_feat = node_feat[feat_name]
+            feat_dim = real_feat.shape[1]
+            virtual_feat = paddle.zeros((num_virtual_nodes, feat_dim), dtype=real_feat.dtype)
+            # Add indicator column for virtual nodes
+            real_indicator = paddle.zeros((num_real_nodes, 1), dtype=real_feat.dtype)
+            virtual_indicator = paddle.ones((num_virtual_nodes, 1), dtype=real_feat.dtype)
+            real_feat = paddle.concat([real_feat, real_indicator], axis=1)
+            virtual_feat = paddle.concat([virtual_feat, virtual_indicator], axis=1)
+            node_feat[feat_name] = paddle.concat([real_feat, virtual_feat], axis=0)
+
+        # Add virtual edges
+        virtual_src = []
+        virtual_dst = []
+        for count in range(num_virtual_nodes):
+            virtual_node = num_real_nodes + count
+            virtual_node_copy = [virtual_node] * num_real_nodes
+            virtual_src.extend(real_nodes)
+            virtual_src.extend(virtual_node_copy)
+            virtual_dst.extend(virtual_node_copy)
+            virtual_dst.extend(real_nodes)
+
+        # Concatenate edges
+        src = paddle.concat([src, paddle.to_tensor(np.array(virtual_src, dtype=np.int64))])
+        dst = paddle.concat([dst, paddle.to_tensor(np.array(virtual_dst, dtype=np.int64))])
+
+        # Add indicator column to edge features
+        for feat_name in edge_feat.keys():
+            real_feat = edge_feat[feat_name]
+            num_real_edges = real_feat.shape[0]
+            feat_dim = real_feat.shape[1]
+            num_virtual_edges = len(virtual_src)
+            real_indicator = paddle.zeros((num_real_edges, 1), dtype=real_feat.dtype)
+            virtual_indicator = paddle.ones((num_virtual_edges, 1), dtype=real_feat.dtype)
+            real_feat = paddle.concat([real_feat, real_indicator], axis=1)
+            virtual_feat = paddle.zeros((num_virtual_edges, feat_dim + 1), dtype=real_feat.dtype)
+            virtual_feat[:, :-1] = 0
+            virtual_feat[:, -1] = 1
+            edge_feat[feat_name] = paddle.concat([real_feat, virtual_feat], axis=0)
+
     # Create MolecularGraph
-    num_nodes = mol.GetNumAtoms()
+    num_nodes = mol.GetNumAtoms() + num_virtual_nodes
     graph = MolecularGraph(
         num_nodes=num_nodes,
         edges=(src, dst),
         node_feat=node_feat,
         edge_feat=edge_feat
     )
-    
+
     return graph
 
 
 def smiles_to_bigraph(
     smiles: str,
-    add_self_loop: bool = True,
+    add_self_loop: bool = False,
     node_featurizer: Optional[Callable] = None,
-    edge_featurizer: Optional[Callable] = None
+    edge_featurizer: Optional[Callable] = None,
+    canonical_atom_order: bool = True,
+    explicit_hydrogens: bool = False,
+    num_virtual_nodes: int = 0
 ) -> MolecularGraph:
-    """Convert SMILES string to MolecularGraph.
-    
-    Args:
-        smiles: SMILES string
-        add_self_loop: Whether to add self-loops
-        node_featurizer: Atom featurizer
-        edge_featurizer: Bond featurizer
-        
-    Returns:
-        MolecularGraph object
+    """Convert a SMILES into a bi-directed DGLGraph and featurize for it.
+
+    Parameters
+    ----------
+    smiles : str
+        String of SMILES
+    add_self_loop : bool
+        Whether to add self loops in DGLGraphs. Default to False.
+    node_featurizer : callable, rdkit.Chem.rdchem.Mol -> dict
+        Featurization for nodes like atoms in a molecule, which can be used to update
+        ndata for a DGLGraph. Default to None.
+    edge_featurizer : callable, rdkit.Chem.rdchem.Mol -> dict
+        Featurization for edges like bonds in a molecule, which can be used to update
+        edata for a DGLGraph. Default to None.
+    canonical_atom_order : bool
+        Whether to use a canonical order of atoms returned by RDKit. Setting it
+        to true might change the order of atoms in the graph constructed. Default
+        to True.
+    explicit_hydrogens : bool
+        Whether to explicitly represent hydrogens as nodes in the graph. If True,
+        it will call rdkit.Chem.AddHs(mol). Default to False.
+    num_virtual_nodes : int
+        The number of virtual nodes to add. The virtual nodes will be connected to
+        all real nodes with virtual edges. If the returned graph has any node/edge
+        feature, an additional column of binary values will be used for each feature
+        to indicate the identity of virtual node/edges. The features of the virtual
+        nodes/edges will be zero vectors except for the additional column. Default to 0.
+
+    Returns
+    -------
+    DGLGraph or None
+        Bi-directed DGLGraph for the molecule if :attr:`smiles` is valid and None otherwise.
     """
-    if not RDKIT_AVAILABLE:
-        raise ImportError("RDKit is required for molecular graph construction. "
-                        "Please install it with: pip install rdkit")
-    
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         raise ValueError(f"Invalid SMILES string: {smiles}")
-    
-    return mol_to_bigraph(mol, add_self_loop, node_featurizer, edge_featurizer)
+
+    return mol_to_bigraph(mol, add_self_loop, node_featurizer, edge_featurizer,
+                          canonical_atom_order, explicit_hydrogens, num_virtual_nodes)
 
 
 def compute_hydrogen_bond_features(
     mol1: 'Chem.Mol',
     mol2: Optional['Chem.Mol'] = None
 ) -> Dict[str, float]:
-    """Compute hydrogen bond features for molecules.
-    
+    """Compute hydrogen bond features for molecules using RDKit descriptors.
+
+    This matches the GDI-NN implementation which uses RDKit's hydrogen bond
+    acceptor and donor descriptors to quantify hydrogen bonding capacity.
+
     Args:
         mol1: First RDKit molecule (solvent 1)
         mol2: Second RDKit molecule (solvent 2), optional
-        
+
     Returns:
         Dictionary with hydrogen bond features:
-            - 'intra_hb1': Intra-molecular hydrogen bonds in mol1
-            - 'intra_hb2': Intra-molecular hydrogen bonds in mol2 (if provided)
-            - 'inter_hb': Inter-molecular hydrogen bonds (if mol2 provided)
+            - 'intra_hb1': Intra-molecular hydrogen bonding capacity for mol1
+                          Calculated as min(HBA, HBD) for solvent 1
+            - 'intra_hb2': Intra-molecular hydrogen bonding capacity for mol2 (if provided)
+                          Calculated as min(HBA, HBD) for solvent 2
+            - 'inter_hb': Inter-molecular hydrogen bonding capacity (if mol2 provided)
+                          Calculated as: min(HBA1, HBD2) + min(HBD1, HBA2)
+
+    Reference:
+        GDI-NN: https://git.rwth-aachen.de/avt-svt/public/GDI-NN
     """
-    if not RDKIT_AVAILABLE:
-        raise ImportError("RDKit is required for hydrogen bond feature computation. "
-                        "Please install it with: pip install rdkit")
-    
-    features = {}
-    
-    # Compute intra-molecular hydrogen bonds for mol1
-    features['intra_hb1'] = float(_count_hydrogen_bonds(mol1))
-    
+    from rdkit.Chem import rdMolDescriptors
+
+    # Compute hydrogen bond acceptors and donors for mol1
+    hba1 = rdMolDescriptors.CalcNumHBA(mol1)
+    hbd1 = rdMolDescriptors.CalcNumHBD(mol1)
+
+    # Intra-molecular hydrogen bonding capacity for mol1
+    # Represents self-association capability within the solvent
+    intra_hb1 = float(min(hba1, hbd1))
+
     if mol2 is not None:
-        # Compute intra-molecular hydrogen bonds for mol2
-        features['intra_hb2'] = float(_count_hydrogen_bonds(mol2))
-        
-        # Compute inter-molecular hydrogen bonds
-        features['inter_hb'] = float(_count_inter_hydrogen_bonds(mol1, mol2))
+        # Compute hydrogen bond acceptors and donors for mol2
+        hba2 = rdMolDescriptors.CalcNumHBA(mol2)
+        hbd2 = rdMolDescriptors.CalcNumHBD(mol2)
+
+        # Intra-molecular hydrogen bonding capacity for mol2
+        intra_hb2 = float(min(hba2, hbd2))
+
+        # Inter-molecular hydrogen bonding capacity
+        # Represents cross-interaction potential between two solvents
+        # Solvent1 can donate to Solvent2 (HBD1 with HBA2) + Solvent2 can donate to Solvent1 (HBD2 with HBA1)
+        inter_hb = float(min(hba1, hbd2) + min(hbd1, hba2))
+
+        return {
+            'intra_hb1': intra_hb1,
+            'intra_hb2': intra_hb2,
+            'inter_hb': inter_hb
+        }
     else:
-        features['intra_hb2'] = 0.0
-        features['inter_hb'] = 0.0
-    
-    return features
-
-
-def _count_hydrogen_bonds(mol: 'Chem.Mol') -> int:
-    """Count intra-molecular hydrogen bonds in a molecule.
-    
-    Args:
-        mol: RDKit molecule
-        
-    Returns:
-        Number of hydrogen bonds
-    """
-    if mol is None:
-        return 0
-    
-    count = 0
-    
-    # Find hydrogen bond donors (N-H, O-H)
-    donors = []
-    for atom in mol.GetAtoms():
-        if atom.GetAtomicNum() in [7, 8]:  # N or O
-            for neighbor in atom.GetNeighbors():
-                if neighbor.GetAtomicNum() == 1:  # H
-                    donors.append(atom.GetIdx())
-                    break
-    
-    # Find hydrogen bond acceptors (N, O, F with lone pairs)
-    acceptors = []
-    for atom in mol.GetAtoms():
-        if atom.GetAtomicNum() in [7, 8, 9]:  # N, O, F
-            acceptors.append(atom.GetIdx())
-    
-    # Count donor-acceptor pairs (simplified)
-    for donor_idx in donors:
-        for acceptor_idx in acceptors:
-            if donor_idx != acceptor_idx:
-                # Check distance (require 3D coordinates)
-                try:
-                    conf = mol.GetConformer()
-                    donor_pos = conf.GetAtomPosition(donor_idx)
-                    acceptor_pos = conf.GetAtomPosition(acceptor_idx)
-                    dist = np.sqrt(
-                        (donor_pos.x - acceptor_pos.x)**2 +
-                        (donor_pos.y - acceptor_pos.y)**2 +
-                        (donor_pos.z - acceptor_pos.z)**2
-                    )
-                    # Hydrogen bond distance threshold (Å)
-                    if dist < 3.5:
-                        count += 1
-                except:
-                    # No 3D coordinates available, skip
-                    pass
-    
-    return count
-
-
-def _count_inter_hydrogen_bonds(mol1: 'Chem.Mol', mol2: 'Chem.Mol') -> int:
-    """Count inter-molecular hydrogen bonds between two molecules.
-    
-    Args:
-        mol1: First RDKit molecule
-        mol2: Second RDKit molecule
-        
-    Returns:
-        Number of inter-molecular hydrogen bonds
-    """
-    if mol1 is None or mol2 is None:
-        return 0
-    
-    # For now, return 0 (requires more sophisticated analysis)
-    # This is a placeholder that can be improved with proper 3D analysis
-    return 0
+        return {
+            'intra_hb1': intra_hb1,
+            'intra_hb2': 0.0,
+            'inter_hb': 0.0
+        }
