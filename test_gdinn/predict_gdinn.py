@@ -64,8 +64,7 @@ def create_dataloader(data_path, batch_size, shuffle=False, num_workers=2):
     dataset = BinaryActivityDataset(
         data_path=data_path,
         add_self_loop=True,
-        preload_graphs=False,
-        compute_hb=False
+        preload_graphs=False
     )
     
     # 创建采样器

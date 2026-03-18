@@ -180,17 +180,13 @@ def prepare_data():
 # GNN 模型精度对齐测试
 # ============================================================================
 
-def test_gnn_alignment(compute_hb: bool = True):
+def test_gnn_alignment():
     """测试 GNN 模型精度对齐 (Paddle vs PyTorch)
-    
-    Args:
-        compute_hb: 是否计算氢键特征
-            - True: 使用 RDKit 计算真实的 HB 特征（GDI-NN 默认行为）
-            - False: 不计算 HB 特征，模型内部使用零填充
+
+    注意: 数据集自动计算 HB 特征（与 GDI-NN 原始行为一致）
     """
-    hb_mode = "使用 HB 特征" if compute_hb else "零填充 HB"
     print("\n" + "=" * 80)
-    print(f"测试 GNN 精度对齐 (Paddle vs PyTorch) - {hb_mode}")
+    print("测试 GNN 精度对齐 (Paddle vs PyTorch)")
     print("=" * 80)
     
     try:
@@ -207,13 +203,12 @@ def test_gnn_alignment(compute_hb: bool = True):
         sys.path.insert(0, GDI_NN_DIR)
         from model.model_GNN import solvgnn_binary
         
-        # 创建 Paddle 数据集（根据 compute_hb 参数决定是否计算 HB 特征）
+        # 创建 Paddle 数据集（自动计算 HB 特征）
         paddle_dataset = BinaryActivityDataset(
             data_path=config.binary_data_path,
             solvent_list_path=config.solvent_list_path,
             add_self_loop=True,
-            preload_graphs=False,
-            compute_hb=compute_hb  # 根据参数决定是否计算 HB 特征
+            preload_graphs=False
         )
         
         # 创建采样器
@@ -268,17 +263,10 @@ def test_gnn_alignment(compute_hb: bool = True):
             g2_paddle = paddle_batch['g2']
             x1_np = paddle_batch['x1'].numpy()
 
-            # 提取 HB 特征
-            # - compute_hb=True: 从 Paddle batch 中提取真实 HB 特征
-            # - compute_hb=False: 使用零填充（验证模型的容错处理）
-            if compute_hb and 'inter_hb' in paddle_batch:
-                inter_hb_np = paddle_batch['inter_hb'].numpy().flatten()
-                intra_hb1_np = paddle_batch['intra_hb1'].numpy().flatten()
-                intra_hb2_np = paddle_batch['intra_hb2'].numpy().flatten()
-            else:
-                inter_hb_np = np.zeros(config.BATCH_SIZE, dtype=np.float32)
-                intra_hb1_np = np.zeros(config.BATCH_SIZE, dtype=np.float32)
-                intra_hb2_np = np.zeros(config.BATCH_SIZE, dtype=np.float32)
+            # 提取 HB 特征 (GDI-NN 要求)
+            inter_hb_np = paddle_batch['inter_hb'].numpy().flatten()
+            intra_hb1_np = paddle_batch['intra_hb1'].numpy().flatten()
+            intra_hb2_np = paddle_batch['intra_hb2'].numpy().flatten()
 
             # 转换 Paddle 图到 DGL 图
             g1_dgl = paddle_graph_to_dgl(g1_paddle)
@@ -523,6 +511,133 @@ def test_mcm_alignment():
 
 
 # ============================================================================
+# HB 特征测试
+# ============================================================================
+
+def test_hb_features():
+    """测试氢键特征计算是否与原始 GDI-NN 一致
+    
+    原始 GDI-NN 实现 (generate_dataset_for_training.py):
+        - solvent_data[solvent_id] = [graph, hba, hbd, min(hba, hbd)]
+        - intra_hb1 = solv1[3]  # min(hba, hbd)
+        - intra_hb2 = solv2[3]  # min(hba, hbd)
+        - inter_hb = min(solv1[1], solv2[2]) + min(solv1[2], solv2[1])
+                   = min(hba1, hbd2) + min(hbd1, hba2)
+    """
+    print("\n" + "=" * 80)
+    print("测试氢键特征计算 (与原始 GDI-NN 对齐)")
+    print("=" * 80)
+    
+    try:
+        from ppmat.datasets import BinaryActivityDataset
+        from rdkit import Chem
+        from rdkit.Chem import rdMolDescriptors
+        
+        # 创建数据集
+        dataset = BinaryActivityDataset(
+            data_path=config.binary_data_path,
+            solvent_list_path=config.solvent_list_path,
+            add_self_loop=True,
+            preload_graphs=False
+        )
+        
+        # 获取一个样本
+        sample = dataset[0]
+        
+        # 验证 HB 特征存在
+        assert 'intra_hb1' in sample, "缺少 intra_hb1 特征"
+        assert 'intra_hb2' in sample, "缺少 intra_hb2 特征"
+        assert 'inter_hb' in sample, "缺少 inter_hb 特征"
+        
+        print(f"✓ HB 特征字段存在")
+        
+        # 验证 HB 特征的计算值
+        # 从溶剂列表获取 SMILES
+        solvent_df = pd.read_csv(config.solvent_list_path)
+        
+        # 获取样本的溶剂 ID 和 SMILES
+        solv1_id = sample['solv1_id']
+        solv2_id = sample['solv2_id']
+        
+        solv1_row = solvent_df[solvent_df['solvent_id'] == solv1_id].iloc[0]
+        solv2_row = solvent_df[solvent_df['solvent_id'] == solv2_id].iloc[0]
+        
+        smiles1 = solv1_row['smiles_can']
+        smiles2 = solv2_row['smiles_can']
+        
+        # 使用 RDKit 计算 HBA 和 HBD (与原始 GDI-NN 一致)
+        mol1 = Chem.MolFromSmiles(smiles1)
+        mol2 = Chem.MolFromSmiles(smiles2)
+        
+        hba1 = rdMolDescriptors.CalcNumHBA(mol1)
+        hbd1 = rdMolDescriptors.CalcNumHBD(mol1)
+        hba2 = rdMolDescriptors.CalcNumHBA(mol2)
+        hbd2 = rdMolDescriptors.CalcNumHBD(mol2)
+        
+        # 计算期望值 (原始 GDI-NN 公式)
+        expected_intra_hb1 = min(hba1, hbd1)
+        expected_intra_hb2 = min(hba2, hbd2)
+        expected_inter_hb = min(hba1, hbd2) + min(hbd1, hba2)
+        
+        # 获取实际值
+        actual_intra_hb1 = float(sample['intra_hb1'].flatten()[0])
+        actual_intra_hb2 = float(sample['intra_hb2'].flatten()[0])
+        actual_inter_hb = float(sample['inter_hb'].flatten()[0])
+        
+        print(f"\n溶剂 1: {solv1_id}")
+        print(f"  SMILES: {smiles1}")
+        print(f"  HBA: {hba1}, HBD: {hbd1}")
+        print(f"  intra_hb1: expected={expected_intra_hb1}, actual={actual_intra_hb1}")
+        
+        print(f"\n溶剂 2: {solv2_id}")
+        print(f"  SMILES: {smiles2}")
+        print(f"  HBA: {hba2}, HBD: {hbd2}")
+        print(f"  intra_hb2: expected={expected_intra_hb2}, actual={actual_intra_hb2}")
+        
+        print(f"\n交互氢键:")
+        print(f"  inter_hb = min({hba1}, {hbd2}) + min({hbd1}, {hba2})")
+        print(f"           = {min(hba1, hbd2)} + {min(hbd1, hba2)}")
+        print(f"           = {expected_inter_hb}")
+        print(f"  actual: {actual_inter_hb}")
+        
+        # 验证值是否匹配
+        assert actual_intra_hb1 == expected_intra_hb1, \
+            f"intra_hb1 不匹配: expected={expected_intra_hb1}, actual={actual_intra_hb1}"
+        assert actual_intra_hb2 == expected_intra_hb2, \
+            f"intra_hb2 不匹配: expected={expected_intra_hb2}, actual={actual_intra_hb2}"
+        assert actual_inter_hb == expected_inter_hb, \
+            f"inter_hb 不匹配: expected={expected_inter_hb}, actual={actual_inter_hb}"
+        
+        print(f"\n✓ HB 特征计算与原始 GDI-NN 一致")
+        
+        # 测试溶剂缓存机制
+        print(f"\n测试溶剂缓存机制...")
+        
+        # 检查 solvent_data 缓存
+        assert hasattr(dataset, 'solvent_data'), "数据集缺少 solvent_data 属性"
+        
+        # 验证缓存格式: [graph, hba, hbd, intra_hb]
+        if solv1_id in dataset.solvent_data:
+            cached = dataset.solvent_data[solv1_id]
+            assert len(cached) == 4, f"缓存格式错误: 期望 4 个元素，实际 {len(cached)} 个"
+            assert cached[1] == hba1, f"缓存 HBA 不匹配"
+            assert cached[2] == hbd1, f"缓存 HBD 不匹配"
+            assert cached[3] == min(hba1, hbd1), f"缓存 intra_hb 不匹配"
+            print(f"  ✓ 溶剂缓存格式正确: [graph, hba={cached[1]}, hbd={cached[2]}, intra_hb={cached[3]}]")
+        
+        return True, "HB 特征测试通过"
+        
+    except AssertionError as e:
+        print(f"\n✗ 断言失败: {e}")
+        return False, str(e)
+    except Exception as e:
+        print(f"\n✗ 测试失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False, str(e)
+
+
+# ============================================================================
 # 主函数
 # ============================================================================
 
@@ -541,11 +656,11 @@ def main():
     # 运行测试
     results = {}
     
-    # GNN 精度对齐测试 - 使用 HB 特征（GDI-NN 默认行为）
-    results['GNN_精度对齐_HB'] = test_gnn_alignment(compute_hb=True)
+    # HB 特征测试 (验证数据集实现与原始 GDI-NN 一致)
+    results['HB_特征计算'] = test_hb_features()
     
-    # GNN 精度对齐测试 - 不使用 HB 特征（零填充模式）
-    results['GNN_精度对齐_无HB'] = test_gnn_alignment(compute_hb=False)
+    # GNN 精度对齐测试
+    results['GNN_精度对齐'] = test_gnn_alignment()
     
     # MCM 精度对齐测试
     results['MCM_精度对齐'] = test_mcm_alignment()

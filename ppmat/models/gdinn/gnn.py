@@ -191,18 +191,15 @@ class SolvGNN(nn.Layer):
         # Create hydrogen bond edge features
         # Original: torch.cat((inter_hb.repeat(2), intra_hb1, intra_hb2)).unsqueeze(1)
         # All hb tensors are 1D [batch_size] in original
-        if 'inter_hb' in batch_data:
-            inter_hb = batch_data['inter_hb'].cast('float32').flatten()   # [batch_size]
-            intra_hb1 = batch_data['intra_hb1'].cast('float32').flatten()  # [batch_size]
-            intra_hb2 = batch_data['intra_hb2'].cast('float32').flatten()  # [batch_size]
-            # repeat(2) on 1D tensor in PyTorch doubles it: [batch] -> [2*batch]
-            hb_features = paddle.concat([
-                paddle.tile(inter_hb, [2]),
-                intra_hb1,
-                intra_hb2
-            ]).unsqueeze(1)  # [4 * batch_size, 1]
-        else:
-            hb_features = paddle.zeros([4 * batch_size, 1], dtype='float32')
+        inter_hb = batch_data['inter_hb'].cast('float32').flatten()   # [batch_size]
+        intra_hb1 = batch_data['intra_hb1'].cast('float32').flatten()  # [batch_size]
+        intra_hb2 = batch_data['intra_hb2'].cast('float32').flatten()  # [batch_size]
+        # repeat(2) on 1D tensor in PyTorch doubles it: [batch] -> [2*batch]
+        hb_features = paddle.concat([
+            paddle.tile(inter_hb, [2]),
+            intra_hb1,
+            intra_hb2
+        ]).unsqueeze(1)  # [4 * batch_size, 1]
 
         # Concatenate both molecule embeddings for global convolution
         # Original: torch.cat((hg1, hg2), axis=0)
@@ -483,17 +480,14 @@ class SolvGNNxMLP(nn.Layer):
         empty_solvsys = generate_empty_solvsys(batch_size)
 
         # Create hydrogen bond edge features
-        if 'inter_hb' in batch_data:
-            inter_hb = batch_data['inter_hb'].cast('float32').flatten()
-            intra_hb1 = batch_data['intra_hb1'].cast('float32').flatten()
-            intra_hb2 = batch_data['intra_hb2'].cast('float32').flatten()
-            hb_features = paddle.concat([
-                paddle.tile(inter_hb, [2]),
-                intra_hb1,
-                intra_hb2
-            ]).unsqueeze(1)
-        else:
-            hb_features = paddle.zeros([4 * batch_size, 1], dtype='float32')
+        inter_hb = batch_data['inter_hb'].cast('float32').flatten()
+        intra_hb1 = batch_data['intra_hb1'].cast('float32').flatten()
+        intra_hb2 = batch_data['intra_hb2'].cast('float32').flatten()
+        hb_features = paddle.concat([
+            paddle.tile(inter_hb, [2]),
+            intra_hb1,
+            intra_hb2
+        ]).unsqueeze(1)
 
         # Concatenate both molecule embeddings for global convolution
         # Note: NO composition concatenation here (unlike base SolvGNN)
@@ -731,17 +725,14 @@ class GEGNN(nn.Layer):
         empty_solvsys = generate_empty_solvsys(batch_size)
 
         # Create hydrogen bond edge features
-        if 'inter_hb' in batch_data:
-            inter_hb = batch_data['inter_hb'].cast('float32').flatten()
-            intra_hb1 = batch_data['intra_hb1'].cast('float32').flatten()
-            intra_hb2 = batch_data['intra_hb2'].cast('float32').flatten()
-            hb_features = paddle.concat([
-                paddle.tile(inter_hb, [2]),
-                intra_hb1,
-                intra_hb2
-            ]).unsqueeze(1)
-        else:
-            hb_features = paddle.zeros([4 * batch_size, 1], dtype='float32')
+        inter_hb = batch_data['inter_hb'].cast('float32').flatten()
+        intra_hb1 = batch_data['intra_hb1'].cast('float32').flatten()
+        intra_hb2 = batch_data['intra_hb2'].cast('float32').flatten()
+        hb_features = paddle.concat([
+            paddle.tile(inter_hb, [2]),
+            intra_hb1,
+            intra_hb2
+        ]).unsqueeze(1)
 
         # Concatenate both molecule embeddings for global convolution
         hg_concat = paddle.concat([hg1, hg2], axis=0)

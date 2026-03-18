@@ -88,8 +88,7 @@ def create_dataloader(data_path, solvent_list_path, batch_size, shuffle=True, nu
         data_path=data_path,
         solvent_list_path=solvent_list_path,
         add_self_loop=True,
-        preload_graphs=False,
-        compute_hb=False
+        preload_graphs=False
     )
     
     # 创建采样器

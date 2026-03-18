@@ -67,7 +67,6 @@ Dataset:
         solvent_list_path: null
         add_self_loop: true
         preload_graphs: false
-        compute_hb: false
     sampler:
       __class_name__: "BatchSampler"
       __init_params__:
@@ -89,7 +88,6 @@ Dataset:
         solvent_list_path: null
         add_self_loop: true
         preload_graphs: false
-        compute_hb: false
     sampler:
       __class_name__: "BatchSampler"
       __init_params__:
@@ -111,7 +109,6 @@ Dataset:
         solvent_list_path: null
         add_self_loop: true
         preload_graphs: false
-        compute_hb: false
     sampler:
       __class_name__: "BatchSampler"
       __init_params__:
