@@ -180,10 +180,17 @@ def prepare_data():
 # GNN 模型精度对齐测试
 # ============================================================================
 
-def test_gnn_alignment():
-    """测试 GNN 模型精度对齐 (Paddle vs PyTorch)"""
+def test_gnn_alignment(compute_hb: bool = True):
+    """测试 GNN 模型精度对齐 (Paddle vs PyTorch)
+    
+    Args:
+        compute_hb: 是否计算氢键特征
+            - True: 使用 RDKit 计算真实的 HB 特征（GDI-NN 默认行为）
+            - False: 不计算 HB 特征，模型内部使用零填充
+    """
+    hb_mode = "使用 HB 特征" if compute_hb else "零填充 HB"
     print("\n" + "=" * 80)
-    print("测试 GNN 精度对齐 (Paddle vs PyTorch)")
+    print(f"测试 GNN 精度对齐 (Paddle vs PyTorch) - {hb_mode}")
     print("=" * 80)
     
     try:
@@ -200,12 +207,13 @@ def test_gnn_alignment():
         sys.path.insert(0, GDI_NN_DIR)
         from model.model_GNN import solvgnn_binary
         
-        # 创建 Paddle 数据集
+        # 创建 Paddle 数据集（根据 compute_hb 参数决定是否计算 HB 特征）
         paddle_dataset = BinaryActivityDataset(
             data_path=config.binary_data_path,
             solvent_list_path=config.solvent_list_path,
             add_self_loop=True,
-            preload_graphs=False
+            preload_graphs=False,
+            compute_hb=compute_hb  # 根据参数决定是否计算 HB 特征
         )
         
         # 创建采样器
@@ -259,22 +267,34 @@ def test_gnn_alignment():
             g1_paddle = paddle_batch['g1']
             g2_paddle = paddle_batch['g2']
             x1_np = paddle_batch['x1'].numpy()
-            
+
+            # 提取 HB 特征
+            # - compute_hb=True: 从 Paddle batch 中提取真实 HB 特征
+            # - compute_hb=False: 使用零填充（验证模型的容错处理）
+            if compute_hb and 'inter_hb' in paddle_batch:
+                inter_hb_np = paddle_batch['inter_hb'].numpy().flatten()
+                intra_hb1_np = paddle_batch['intra_hb1'].numpy().flatten()
+                intra_hb2_np = paddle_batch['intra_hb2'].numpy().flatten()
+            else:
+                inter_hb_np = np.zeros(config.BATCH_SIZE, dtype=np.float32)
+                intra_hb1_np = np.zeros(config.BATCH_SIZE, dtype=np.float32)
+                intra_hb2_np = np.zeros(config.BATCH_SIZE, dtype=np.float32)
+
             # 转换 Paddle 图到 DGL 图
             g1_dgl = paddle_graph_to_dgl(g1_paddle)
             g2_dgl = paddle_graph_to_dgl(g2_paddle)
-            
+
             # 创建 empty solvsys (匹配原始 generate_solvsys)
             empty_solvsys = create_empty_solvsys(config.BATCH_SIZE)
-            
+
             # PyTorch 前向传播 (solv1_x 需要 1D tensor)
             torch_batch = {
                 'g1': g1_dgl,
                 'g2': g2_dgl,
                 'solv1_x': torch.from_numpy(x1_np).flatten(),
-                'inter_hb': torch.zeros(config.BATCH_SIZE),
-                'intra_hb1': torch.zeros(config.BATCH_SIZE),
-                'intra_hb2': torch.zeros(config.BATCH_SIZE),
+                'inter_hb': torch.from_numpy(inter_hb_np),
+                'intra_hb1': torch.from_numpy(intra_hb1_np),
+                'intra_hb2': torch.from_numpy(intra_hb2_np),
             }
             
             with torch.no_grad():
@@ -521,8 +541,11 @@ def main():
     # 运行测试
     results = {}
     
-    # GNN 精度对齐测试
-    results['GNN_精度对齐'] = test_gnn_alignment()
+    # GNN 精度对齐测试 - 使用 HB 特征（GDI-NN 默认行为）
+    results['GNN_精度对齐_HB'] = test_gnn_alignment(compute_hb=True)
+    
+    # GNN 精度对齐测试 - 不使用 HB 特征（零填充模式）
+    results['GNN_精度对齐_无HB'] = test_gnn_alignment(compute_hb=False)
     
     # MCM 精度对齐测试
     results['MCM_精度对齐'] = test_mcm_alignment()
