@@ -27,77 +27,71 @@ from typing import Optional, Union, Callable
 from ppmat.models.gdinn.graph_utils import segment_sum, segment_mean
 
 
-def get_activation_func(activation: Optional[str] = None) -> Callable:
-    """Get activation function based on activation name.
+def get_activation(activation: Optional[str] = None, get_nn: bool = False) -> Union[Callable, nn.Layer]:
+    """Get activation function or layer based on activation name.
     
-    This function returns a callable activation function from paddle.nn.functional
-    that can be applied to tensors.
+    This function returns either a callable activation function from paddle.nn.functional
+    or an nn.Layer activation module, controlled by the get_nn parameter.
     
     Args:
         activation: Name of the activation function. Supported values:
             - None, "relu", "ReLU", "RELU": ReLU activation
             - "elu", "ELU": ELU activation
-            - "leaky_relu", "LeakyReLU": LeakyReLU activation
-            - "sigmoid", "Sigmoid": Sigmoid activation
-            - "softplus", "Softplus": Softplus activation
-            - "silu", "SiLU": SiLU activation
+            - "leaky_relu", "LeakyReLU", "LeakyRELU", "leakyrelu": LeakyReLU activation
+            - "sigmoid", "Sigmoid", "SIGMOID": Sigmoid activation
+            - "softplus", "Softplus", "SOFTPLUS": Softplus activation
+            - "silu", "SiLU", "SILU": SiLU activation
             - "tanh": Tanh activation
+        get_nn: If True, returns nn.Layer activation module; if False, returns functional activation
     
     Returns:
-        Callable activation function from paddle.nn.functional
+        If get_nn=False: Callable activation function from paddle.nn.functional
+        If get_nn=True: nn.Layer activation module
+    
+    Examples:
+        >>> # Get functional activation
+        >>> act_func = get_activation("relu")
+        >>> output = act_func(input_tensor)
+        >>> 
+        >>> # Get layer activation for nn.Sequential
+        >>> model = nn.Sequential(
+        ...     nn.Linear(10, 20),
+        ...     get_activation("relu", get_nn=True)()
+        ... )
     """
     if activation is None or activation in ["relu", "ReLU", "RELU"]:
+        if get_nn:
+            return nn.ReLU
         return F.relu
     elif activation in ["elu", "ELU"]:
+        if get_nn:
+            return nn.ELU
         return F.elu
-    elif activation in ["leaky_relu", "LeakyReLU"]:
+    elif activation in ["leaky_relu", "LeakyReLU", "LeakyRELU", "leakyrelu", "leakyReLU", "leakyRELU"]:
+        if get_nn:
+            return nn.LeakyReLU
         return F.leaky_relu
-    elif activation in ["sigmoid", "Sigmoid"]:
+    elif activation in ["sigmoid", "Sigmoid", "SIGMOID"]:
+        if get_nn:
+            return nn.Sigmoid
         return F.sigmoid
-    elif activation in ["softplus", "Softplus"]:
+    elif activation in ["softplus", "Softplus", "SOFTPLUS"]:
+        if get_nn:
+            return nn.Softplus
         return F.softplus
-    elif activation in ["silu", "SiLU"]:
+    elif activation in ["silu", "SiLU", "SILU"]:
+        if get_nn:
+            return nn.SiLU
         return F.silu
     elif activation == "tanh":
+        if get_nn:
+            return nn.Tanh
         return F.tanh
     else:
+        # Default to ReLU
+        if get_nn:
+            return nn.ReLU
         return F.relu
-
-
-def get_activation_layer(activation: Optional[str] = None) -> nn.Layer:
-    """Get activation layer based on activation name.
-    
-    This function returns an nn.Layer activation that can be used in nn.Sequential.
-    
-    Args:
-        activation: Name of the activation function. Supported values:
-            - None, "relu", "ReLU": ReLU layer
-            - "elu", "ELU": ELU layer
-            - "leaky_relu", "LeakyReLU": LeakyReLU layer
-            - "sigmoid", "Sigmoid": Sigmoid layer
-            - "tanh": Tanh layer
-            - "softplus", "Softplus": Softplus layer
-            - "silu", "SiLU": Silu layer
-    
-    Returns:
-        nn.Layer activation module
-    """
-    if activation is None or activation in ["relu", "ReLU", "RELU"]:
-        return nn.ReLU()
-    elif activation in ["elu", "ELU"]:
-        return nn.ELU()
-    elif activation in ["leaky_relu", "LeakyReLU"]:
-        return nn.LeakyReLU()
-    elif activation in ["sigmoid", "Sigmoid"]:
-        return nn.Sigmoid()
-    elif activation == "tanh":
-        return nn.Tanh()
-    elif activation in ["softplus", "Softplus"]:
-        return nn.Softplus()
-    elif activation in ["silu", "SiLU"]:
-        return nn.Silu()
-    else:
-        return nn.ReLU()
 
 
 class NNConv(nn.Layer):
@@ -368,18 +362,18 @@ class MPNNConv(nn.Layer):
         self.num_step_message_passing = num_step_message_passing
         self.activation = activation
 
-        self.mpnn_activation = get_activation_func(activation)
+        self.mpnn_activation = get_activation(activation)
 
         # Project node features: Linear + Activation (matches original)
         self.project_node_feats = nn.Sequential(
             nn.Linear(node_in_feats, node_out_feats),
-            get_activation_layer(activation)
+            get_activation(activation, get_nn=True)()
         )
 
         # Edge function MLP: transforms edge features to edge weights
         edge_network = nn.Sequential(
             nn.Linear(edge_in_feats, edge_hidden_feats),
-            get_activation_layer(activation),
+            get_activation(activation, get_nn=True)(),
             nn.Linear(edge_hidden_feats, node_out_feats * node_out_feats)
         )
 

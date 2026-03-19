@@ -25,7 +25,7 @@ import paddle.nn as nn
 import paddle.nn.functional as F
 from typing import Dict, Optional, Tuple
 
-from ppmat.models.gdinn.layers import GraphConv, MPNNConv, get_activation_func
+from ppmat.models.gdinn.layers import GraphConv, MPNNConv, get_activation
 from ppmat.models.gdinn.graph_utils import mean_nodes, generate_empty_solvsys
 
 
@@ -89,7 +89,7 @@ class SolvGNN(nn.Layer):
 
         # MLP classifier (shared for both solvents)
         # Input dimension is hidden_dim (output of global_conv)
-        self.mlp_activation = get_activation_func(mlp_activation)
+        self.mlp_activation = get_activation(mlp_activation)
         self.classify1 = nn.Linear(hidden_dim, hidden_dim)
         self.classify2 = nn.Linear(hidden_dim, hidden_dim)
         self.classify3 = nn.Linear(hidden_dim, n_classes)
@@ -392,7 +392,7 @@ class SolvGNNxMLP(nn.Layer):
         # MLP classifier
         # Input dimension is hidden_dim + 1 (composition added AFTER global_conv)
         self.mlp_dropout = nn.Dropout(mlp_dropout_rate)
-        self.mlp_activation = get_activation_func(mlp_activation)
+        self.mlp_activation = get_activation(mlp_activation)
         self.classify1 = nn.Linear(hidden_dim + 1, hidden_dim)
         if self.mlp_num_hid_layers == 2:
             self.classify2 = nn.Linear(hidden_dim, hidden_dim)
@@ -620,7 +620,7 @@ class GEGNN(nn.Layer):
         )
 
         # SLP (Solvation Layer Perceptron) for transforming embeddings with composition
-        self.mlp_activation = get_activation_func(mlp_activation)
+        self.mlp_activation = get_activation(mlp_activation)
         self.mfp_trans = nn.Linear(hidden_dim + 1, hidden_dim + 1)
         
         # MLP classifier for G^E prediction
