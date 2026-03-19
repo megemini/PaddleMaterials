@@ -532,9 +532,6 @@ class GEGNN(nn.Layer):
             solv1_x = solv1_x.squeeze(-1)
         solv1_x.stop_gradient = False
 
-        gamma1_label = batch_data['gamma1']
-        gamma2_label = batch_data['gamma2']
-
         # Extract node features
         h1 = g1.node_feat['h'].cast('float32')
         h2 = g2.node_feat['h'].cast('float32')
@@ -621,6 +618,9 @@ class GEGNN(nn.Layer):
         gamma2_pred = paddle.exp(ln_gamma2_pred)
 
         # Compute prediction loss
+        gamma1_label = batch_data['gamma1']
+        gamma2_label = batch_data['gamma2']
+        
         pred_loss = 0.5 * F.mse_loss(ln_gamma1_pred.squeeze(-1), gamma1_label.squeeze(-1)) + \
                     0.5 * F.mse_loss(ln_gamma2_pred.squeeze(-1), gamma2_label.squeeze(-1))
         
