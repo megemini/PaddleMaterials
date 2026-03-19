@@ -110,6 +110,8 @@ class SolvGNN(nn.Layer):
                 - intra_hb1: Intra-molecular hydrogen bonds in solvent 1 [batch_size, 1]
                 - intra_hb2: Intra-molecular hydrogen bonds in solvent 2 [batch_size, 1]
                 - inter_hb: Inter-molecular hydrogen bonds [batch_size, 1]
+                - empty_solvsys: Empty solvent system graph for global interaction.
+                    Must be provided by BinaryActivityCollator.
 
         Returns:
             Dictionary containing:
@@ -155,9 +157,9 @@ class SolvGNN(nn.Layer):
         hg1 = paddle.concat([hg1, solv1_x.unsqueeze(-1)], axis=1)  # [batch_size, hidden_dim + 1]
         hg2 = paddle.concat([hg2, (1 - solv1_x).unsqueeze(-1)], axis=1)  # [batch_size, hidden_dim + 1]
 
-        # Generate empty solvent system graph
-        batch_size = solv1_x.shape[0]
-        empty_solvsys = generate_empty_solvsys(batch_size)
+        # Get empty solvent system graph from batch_data
+        # Must be provided by BinaryActivityCollator
+        empty_solvsys = batch_data['empty_solvsys']
 
         # Create hydrogen bond edge features
         # Original: torch.cat((inter_hb.repeat(2), intra_hb1, intra_hb2)).unsqueeze(1)
@@ -441,9 +443,9 @@ class SolvGNNxMLP(nn.Layer):
         hg1 = mean_nodes(g1, "h")
         hg2 = mean_nodes(g2, "h")
 
-        # Generate empty solvent system graph
-        batch_size = solv1_x.shape[0]
-        empty_solvsys = generate_empty_solvsys(batch_size)
+        # Get empty solvent system graph from batch_data
+        # Must be provided by BinaryActivityCollator
+        empty_solvsys = batch_data['empty_solvsys']
 
         # Create hydrogen bond edge features
         inter_hb = batch_data['inter_hb'].cast('float32').flatten()
@@ -669,9 +671,9 @@ class GEGNN(nn.Layer):
         hg1 = mean_nodes(g1, "h")
         hg2 = mean_nodes(g2, "h")
 
-        # Generate empty solvent system graph
-        batch_size = solv1_x.shape[0]
-        empty_solvsys = generate_empty_solvsys(batch_size)
+        # Get empty solvent system graph from batch_data
+        # Must be provided by BinaryActivityCollator
+        empty_solvsys = batch_data['empty_solvsys']
 
         # Create hydrogen bond edge features
         inter_hb = batch_data['inter_hb'].cast('float32').flatten()

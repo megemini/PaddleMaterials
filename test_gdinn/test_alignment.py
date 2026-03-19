@@ -197,7 +197,7 @@ def test_gnn_alignment():
         from ppmat.models.gdinn.gnn import SolvGNN
         from ppmat.datasets import BinaryActivityDataset
         from paddle.io import DataLoader, BatchSampler
-        from ppmat.datasets.collate_fn import DefaultCollator
+        from ppmat.datasets.collate_fn import BinaryActivityCollator
         
         # 导入 PyTorch 模型
         sys.path.insert(0, GDI_NN_DIR)
@@ -219,7 +219,7 @@ def test_gnn_alignment():
             drop_last=False
         )
         
-        collator = DefaultCollator()
+        collator = BinaryActivityCollator()
         paddle_loader = DataLoader(
             dataset=paddle_dataset,
             batch_sampler=sampler,

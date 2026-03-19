@@ -149,7 +149,7 @@ def test_data_loading():
     try:
         from ppmat.datasets import BinaryActivityDataset
         from paddle.io import DataLoader, BatchSampler
-        from ppmat.datasets.collate_fn import DefaultCollator
+        from ppmat.datasets.collate_fn import BinaryActivityCollator
 
         # 创建数据集（GDI-NN 格式）
         dataset = BinaryActivityDataset(
@@ -171,7 +171,7 @@ def test_data_loading():
         )
         
         # 创建数据加载器
-        collator = DefaultCollator()
+        collator = BinaryActivityCollator()
         dataloader = DataLoader(
             dataset=dataset,
             batch_sampler=sampler,
@@ -192,8 +192,8 @@ def test_data_loading():
             print(f"  g1 edges: {batch['g1'].num_edges}")
             print(f"  g2 nodes: {batch['g2'].num_nodes}")
             print(f"  g2 edges: {batch['g2'].num_edges}")
-            if 'T' in batch:
-                print(f"  T shape: {batch['T'].shape}")
+            print(f"  empty_solvsys nodes: {batch['empty_solvsys'].num_nodes}")
+            print(f"  empty_solvsys edges: {batch['empty_solvsys'].num_edges}")
             print(f"  x1 shape: {batch['x1'].shape}")
             print(f"  x2 shape: {batch['x2'].shape}")
             print(f"  gamma1 shape: {batch['gamma1'].shape}")
@@ -219,7 +219,7 @@ def test_model_forward():
         from ppmat.models import SolvGNN
         from ppmat.datasets import BinaryActivityDataset
         from paddle.io import DataLoader, BatchSampler
-        from ppmat.datasets.collate_fn import DefaultCollator
+        from ppmat.datasets.collate_fn import BinaryActivityCollator
         
         # 创建模型 (使用与原始 GDI-NN 一致的默认参数)
         model = SolvGNN(
@@ -249,7 +249,7 @@ def test_model_forward():
             drop_last=True
         )
 
-        collator = DefaultCollator()
+        collator = BinaryActivityCollator()
         dataloader = DataLoader(
             dataset=dataset,
             batch_sampler=sampler,
@@ -297,7 +297,7 @@ def test_training_step():
         from ppmat.losses import GDICombinedLoss
         from ppmat.datasets import BinaryActivityDataset
         from paddle.io import DataLoader, BatchSampler
-        from ppmat.datasets.collate_fn import DefaultCollator
+        from ppmat.datasets.collate_fn import BinaryActivityCollator
         
         # 创建模型 (使用与原始 GDI-NN 一致的默认参数)
         model = SolvGNN(
@@ -334,7 +334,7 @@ def test_training_step():
             drop_last=True
         )
         
-        collator = DefaultCollator()
+        collator = BinaryActivityCollator()
         dataloader = DataLoader(
             dataset=dataset,
             batch_sampler=sampler,
@@ -393,7 +393,7 @@ def test_solvgnn_xmlp_forward():
         from ppmat.models import SolvGNNxMLP
         from ppmat.datasets import BinaryActivityDataset
         from paddle.io import DataLoader, BatchSampler
-        from ppmat.datasets.collate_fn import DefaultCollator
+        from ppmat.datasets.collate_fn import BinaryActivityCollator
         
         # 创建模型
         model = SolvGNNxMLP(
@@ -424,7 +424,7 @@ def test_solvgnn_xmlp_forward():
             drop_last=True
         )
 
-        collator = DefaultCollator()
+        collator = BinaryActivityCollator()
         dataloader = DataLoader(
             dataset=dataset,
             batch_sampler=sampler,
@@ -471,7 +471,7 @@ def test_solvgnn_xmlp_training():
         from ppmat.models import SolvGNNxMLP
         from ppmat.datasets import BinaryActivityDataset
         from paddle.io import DataLoader, BatchSampler
-        from ppmat.datasets.collate_fn import DefaultCollator
+        from ppmat.datasets.collate_fn import BinaryActivityCollator
         
         # 创建模型
         model = SolvGNNxMLP(
@@ -500,7 +500,7 @@ def test_solvgnn_xmlp_training():
             drop_last=True
         )
 
-        collator = DefaultCollator()
+        collator = BinaryActivityCollator()
         dataloader = DataLoader(
             dataset=dataset,
             batch_sampler=sampler,
@@ -559,7 +559,7 @@ def test_gegnn_forward():
         from ppmat.models import GEGNN
         from ppmat.datasets import BinaryActivityDataset
         from paddle.io import DataLoader, BatchSampler
-        from ppmat.datasets.collate_fn import DefaultCollator
+        from ppmat.datasets.collate_fn import BinaryActivityCollator
         
         # 创建模型
         model = GEGNN(
@@ -589,7 +589,7 @@ def test_gegnn_forward():
             drop_last=True
         )
 
-        collator = DefaultCollator()
+        collator = BinaryActivityCollator()
         dataloader = DataLoader(
             dataset=dataset,
             batch_sampler=sampler,
@@ -639,7 +639,7 @@ def test_gegnn_training():
         from ppmat.models import GEGNN
         from ppmat.datasets import BinaryActivityDataset
         from paddle.io import DataLoader, BatchSampler
-        from ppmat.datasets.collate_fn import DefaultCollator
+        from ppmat.datasets.collate_fn import BinaryActivityCollator
         
         # 创建模型
         model = GEGNN(
@@ -667,7 +667,7 @@ def test_gegnn_training():
             drop_last=True
         )
 
-        collator = DefaultCollator()
+        collator = BinaryActivityCollator()
         dataloader = DataLoader(
             dataset=dataset,
             batch_sampler=sampler,
@@ -940,7 +940,7 @@ def test_prediction():
         from ppmat.models import SolvGNN
         from ppmat.datasets import BinaryActivityDataset
         from paddle.io import DataLoader, BatchSampler
-        from ppmat.datasets.collate_fn import DefaultCollator
+        from ppmat.datasets.collate_fn import BinaryActivityCollator
         
         # 创建模型 (使用与原始 GDI-NN 一致的默认参数)
         model = SolvGNN(
@@ -966,7 +966,7 @@ def test_prediction():
             drop_last=False
         )
 
-        collator = DefaultCollator()
+        collator = BinaryActivityCollator()
         dataloader = DataLoader(
             dataset=dataset,
             batch_sampler=sampler,

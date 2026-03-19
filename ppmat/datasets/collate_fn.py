@@ -32,11 +32,7 @@ from ppmat.datasets.geometric_data_type.batch import Batch
 from ppmat.datasets.geometric_data_type.data import Data
 
 # Import MolecularGraph for GDI-NN
-try:
-    from ppmat.models.gdinn.graph_utils import MolecularGraph, batch_graphs
-    MOLECULAR_GRAPH_AVAILABLE = True
-except ImportError:
-    MOLECULAR_GRAPH_AVAILABLE = False
+from ppmat.models.gdinn.graph_utils import batch_graphs, generate_empty_solvsys
 
 
 class DefaultCollator(object):
@@ -89,12 +85,9 @@ class DefaultCollator(object):
             return graphs
         elif isinstance(sample, ConcatData):
             return ConcatData.batch(batch)
-        elif MOLECULAR_GRAPH_AVAILABLE and isinstance(sample, MolecularGraph):
-            # Batch MolecularGraph objects for GDI-NN
-            return batch_graphs(batch)
         raise TypeError(
             "batch data can only contains: paddle.Tensor, numpy.ndarray, "
-            f"dict, list, number, None, pgl.Graph, MolecularGraph, but got {type(sample)}"
+            f"dict, list, number, None, pgl.Graph, but got {type(sample)}"
         )
 
 
@@ -291,6 +284,87 @@ class DensityVoxelCollator:
             "graph": g,
             "infos": list(infos),
         }
+
+class BinaryActivityCollator:
+    """Collator for GDI-NN binary activity coefficient dataset.
+    
+    This collator handles batching of binary solvent mixture data and generates
+    the empty_solvsys graph for global interaction during the collation process.
+    
+    The collated batch contains:
+        - g1: Batched molecular graph for solvent 1
+        - g2: Batched molecular graph for solvent 2
+        - x1: Composition of solvent 1 [batch_size, 1]
+        - x2: Composition of solvent 2 [batch_size, 1]
+        - gamma1: ln(activity coefficient) for solvent 1 [batch_size, 1]
+        - gamma2: ln(activity coefficient) for solvent 2 [batch_size, 1]
+        - intra_hb1: Intra-molecular hydrogen bonds for solvent 1 [batch_size, 1]
+        - intra_hb2: Intra-molecular hydrogen bonds for solvent 2 [batch_size, 1]
+        - inter_hb: Inter-molecular hydrogen bonds [batch_size, 1]
+        - empty_solvsys: Empty solvent system graph for global interaction
+        - solv1_id: List of solvent 1 IDs
+        - solv2_id: List of solvent 2 IDs
+    
+    This matches the GDI-NN training format where empty_solvsys is generated
+    based on batch_size during data collation.
+    """
+    
+    def __init__(self):
+        """Initialize BinaryActivityCollator."""
+        pass
+    
+    def __call__(self, batch: List[dict]) -> dict:
+        """Collate a batch of binary activity samples.
+        
+        Args:
+            batch: List of sample dictionaries from BinaryActivityDataset
+            
+        Returns:
+            Collated batch dictionary with batched graphs and tensors
+        """
+        if len(batch) == 0:
+            raise ValueError("Cannot collate empty batch")
+        
+        batch_size = len(batch)
+        
+        # Batch molecular graphs
+        g1_list = [sample['g1'] for sample in batch]
+        g2_list = [sample['g2'] for sample in batch]
+        g1 = batch_graphs(g1_list)
+        g2 = batch_graphs(g2_list)
+        
+        # Stack numerical tensors
+        x1 = paddle.stack([paddle.to_tensor(sample['x1']) for sample in batch], axis=0)
+        x2 = paddle.stack([paddle.to_tensor(sample['x2']) for sample in batch], axis=0)
+        gamma1 = paddle.stack([paddle.to_tensor(sample['gamma1']) for sample in batch], axis=0)
+        gamma2 = paddle.stack([paddle.to_tensor(sample['gamma2']) for sample in batch], axis=0)
+        intra_hb1 = paddle.stack([paddle.to_tensor(sample['intra_hb1']) for sample in batch], axis=0)
+        intra_hb2 = paddle.stack([paddle.to_tensor(sample['intra_hb2']) for sample in batch], axis=0)
+        inter_hb = paddle.stack([paddle.to_tensor(sample['inter_hb']) for sample in batch], axis=0)
+        
+        # Generate empty_solvsys for global interaction
+        # This is the key addition - generating it during collation
+        empty_solvsys = generate_empty_solvsys(batch_size)
+        
+        # Collect solvent IDs (keep as list for reference)
+        solv1_ids = [sample['solv1_id'] for sample in batch]
+        solv2_ids = [sample['solv2_id'] for sample in batch]
+        
+        return {
+            'g1': g1,
+            'g2': g2,
+            'x1': x1,
+            'x2': x2,
+            'gamma1': gamma1,
+            'gamma2': gamma2,
+            'intra_hb1': intra_hb1,
+            'intra_hb2': intra_hb2,
+            'inter_hb': inter_hb,
+            'empty_solvsys': empty_solvsys,
+            'solv1_id': solv1_ids,
+            'solv2_id': solv2_ids,
+        }
+
 
 # utils DensityCollator
 def pad_sequence(sequences, batch_first=False, padding_value=0):
