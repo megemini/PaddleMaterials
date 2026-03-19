@@ -43,6 +43,7 @@ from paddle.io import Dataset
 from ppmat.models.gdinn.graph_utils import MolecularGraph
 from ppmat.datasets.build_molecule import BuildMolecule
 from ppmat.models.gdinn.molecular_graph import mol_to_bigraph, smiles_to_bigraph
+from ppmat.models.gdinn.atom_feat_encoding import CanonicalAtomFeaturizer
 
 
 class BinaryActivityDataset(Dataset):
@@ -101,10 +102,17 @@ class BinaryActivityDataset(Dataset):
         self.add_self_loop = add_self_loop
         self.preload_graphs = preload_graphs
 
-        # Set default graph converter
+        # Set default graph converter with CanonicalAtomFeaturizer
+        # This matches the GDI-NN implementation
         if graph_converter is None:
             self.graph_converter = lambda mol: mol_to_bigraph(
-                mol, add_self_loop=add_self_loop
+                mol,
+                add_self_loop=add_self_loop,
+                node_featurizer=CanonicalAtomFeaturizer(),
+                edge_featurizer=None,
+                canonical_atom_order=False,
+                explicit_hydrogens=False,
+                num_virtual_nodes=0
             )
         else:
             self.graph_converter = graph_converter
