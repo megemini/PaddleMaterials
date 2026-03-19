@@ -32,47 +32,7 @@ from typing import Dict, Optional, List
 import paddle.nn.layer as L
 
 from ppmat.losses.gibbs_duhem_loss import GibbsDuhemLoss
-
-
-def get_activation(activation: Optional[str] = None, get_nn: bool = False):
-    """Get activation function based on activation name.
-    
-    Args:
-        activation: Name of activation function
-        get_nn: If True, return nn.Layer; otherwise return functional
-    
-    Returns:
-        Activation function or layer
-    """
-    if activation is None or activation in ["relu", "ReLU", "RELU"]:
-        if get_nn:
-            return nn.ReLU
-        return F.relu
-    elif activation in ["elu", "ELU"]:
-        if get_nn:
-            return nn.ELU
-        return F.elu
-    elif activation in ["LeakyReLU", "LeakyRELU", "leakyReLU", "leakyrelu", 
-                        "leakyRELU", "leaky_relu", "Leaky_ReLU", "Leaky_RELU"]:
-        if get_nn:
-            return nn.LeakyReLU
-        return F.leaky_relu
-    elif activation in ["sigmoid", "Sigmoid", "SIGMOID"]:
-        if get_nn:
-            return nn.Sigmoid
-        return F.sigmoid
-    elif activation in ["softplus", "Softplus", "SOFTPLUS"]:
-        if get_nn:
-            return nn.Softplus
-        return F.softplus
-    elif activation in ["silu", "SiLU", "SILU"]:
-        if get_nn:
-            return nn.Silu
-        return F.silu
-    else:
-        if get_nn:
-            return nn.ReLU
-        return F.relu
+from ppmat.models.gdinn.layers import get_activation
 
 
 class MLPModule(nn.Layer):
@@ -252,18 +212,6 @@ class MCM_MultiMLP(nn.Layer):
         solv1_id = batch_data['solv1_id'].cast('int64')
         solv2_id = batch_data['solv2_id'].cast('int64')
         
-        # Get labels
-        gamma1_label = batch_data['gamma1']
-        gamma2_label = batch_data['gamma2']
-        while gamma1_label.ndim > 2:
-            gamma1_label = gamma1_label.squeeze(-1)
-        while gamma2_label.ndim > 2:
-            gamma2_label = gamma2_label.squeeze(-1)
-        if gamma1_label.ndim == 1:
-            gamma1_label = gamma1_label.unsqueeze(-1)
-        if gamma2_label.ndim == 1:
-            gamma2_label = gamma2_label.unsqueeze(-1)
-        
         # Embedding
         x_solvent = self.solvent_emb(solv1_id)  # [batch_size, dim_hidden]
         x_solute = self.solvent_emb(solv2_id)   # [batch_size, dim_hidden]
@@ -293,6 +241,9 @@ class MCM_MultiMLP(nn.Layer):
         gamma2_pred = paddle.exp(ln_gamma2_pred)
         
         # Compute prediction loss
+        gamma1_label = batch_data['gamma1']
+        gamma2_label = batch_data['gamma2']
+
         pred_loss = 0.5 * F.mse_loss(ln_gamma1_pred.squeeze(-1), gamma1_label.squeeze(-1)) + \
                     0.5 * F.mse_loss(ln_gamma2_pred.squeeze(-1), gamma2_label.squeeze(-1))
         
