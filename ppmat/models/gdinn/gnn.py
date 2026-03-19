@@ -27,6 +27,7 @@ from typing import Dict, Optional, Tuple
 
 from ppmat.models.gdinn.layers import GraphConv, MPNNConv, get_activation
 from ppmat.models.gdinn.graph_utils import mean_nodes, generate_empty_solvsys
+from ppmat.losses.gibbs_duhem_loss import GibbsDuhemLoss
 
 
 class SolvGNN(nn.Layer):
@@ -69,7 +70,6 @@ class SolvGNN(nn.Layer):
         self.in_dim = in_dim
         self.hidden_dim = hidden_dim
         self.n_classes = n_classes
-        self.pinn_lambda = pinn_lambda
 
         # Graph convolutional layers (shared between two solvents)
         # Original uses plain DGL GraphConv without built-in activation
@@ -93,6 +93,13 @@ class SolvGNN(nn.Layer):
         self.classify1 = nn.Linear(hidden_dim, hidden_dim)
         self.classify2 = nn.Linear(hidden_dim, hidden_dim)
         self.classify3 = nn.Linear(hidden_dim, n_classes)
+
+        # Gibbs-Duhem loss function
+        self.gd_loss_fn = GibbsDuhemLoss(
+            lambda_gd=pinn_lambda,
+            loss_type="mse",
+            create_graph=True
+        )
     
     def forward(
         self,
@@ -203,15 +210,6 @@ class SolvGNN(nn.Layer):
         # Compute prediction loss
         gamma1_label = batch_data['gamma1']
         gamma2_label = batch_data['gamma2']
-        # Ensure labels have shape [batch_size, 1]
-        while gamma1_label.ndim > 2:
-            gamma1_label = gamma1_label.squeeze(-1)
-        while gamma2_label.ndim > 2:
-            gamma2_label = gamma2_label.squeeze(-1)
-        if gamma1_label.ndim == 1:
-            gamma1_label = gamma1_label.unsqueeze(-1)
-        if gamma2_label.ndim == 1:
-            gamma2_label = gamma2_label.unsqueeze(-1)
 
         # Labels (gamma1_label, gamma2_label) are already ln(gamma) values from the dataset
         # Original: loss1 = loss_fn1(y[:,0], labgam1)  where labgam1 is ln(gamma)
@@ -219,12 +217,10 @@ class SolvGNN(nn.Layer):
                     0.5 * F.mse_loss(ln_gamma2_pred.squeeze(-1), gamma2_label.squeeze(-1))
         
         # Compute Gibbs-Duhem constraint loss
-        gd_loss = self._compute_gibbs_duhem_loss(
-            ln_gamma1_pred, ln_gamma2_pred, solv1_x
-        )
-        
+        gd_loss = self.gd_loss_fn(ln_gamma1_pred, ln_gamma2_pred, solv1_x)
+
         # Total loss
-        total_loss = pred_loss + self.pinn_lambda * gd_loss
+        total_loss = pred_loss + gd_loss
         
         # Build output dictionaries
         loss_dict = {
@@ -244,66 +240,7 @@ class SolvGNN(nn.Layer):
             'loss_dict': loss_dict,
             'pred_dict': pred_dict
         }
-    
-    def _compute_gibbs_duhem_loss(
-        self,
-        ln_gamma1: paddle.Tensor,
-        ln_gamma2: paddle.Tensor,
-        x1: paddle.Tensor
-    ) -> paddle.Tensor:
-        """Compute Gibbs-Duhem constraint loss.
 
-        Matches original GDI-NN:
-            y1_x1 = torch.autograd.grad(output[:,0].sum(), solv1x, create_graph=True)[0]
-            y2_x1 = torch.autograd.grad(output[:,1].sum(), solv1x, create_graph=True)[0]
-            gd_grad = x1 * y1_x1 + x2 * y2_x1
-            loss_gd_grad = (gd_grad).pow(2).mean()
-
-        Note: x1.stop_gradient must be set to False BEFORE the forward computations.
-
-        Args:
-            ln_gamma1: Predicted ln(gamma1) [batch_size, 1]
-            ln_gamma2: Predicted ln(gamma2) [batch_size, 1]
-            x1: Composition of solvent 1 [batch_size] (must have stop_gradient=False)
-
-        Returns:
-            Gibbs-Duhem constraint loss (scalar)
-        """
-        # Compute d(ln(gamma1))/dx1: grad(sum(ln_gamma1), x1)
-        # Matches original: torch.autograd.grad(output[:,0].sum(), solv1x, create_graph=True)[0]
-        y1_x1 = paddle.grad(
-            outputs=ln_gamma1.sum(),
-            inputs=x1,
-            create_graph=True,
-            retain_graph=True,
-            allow_unused=True
-        )[0]
-
-        # Compute d(ln(gamma2))/dx1
-        y2_x1 = paddle.grad(
-            outputs=ln_gamma2.sum(),
-            inputs=x1,
-            create_graph=True,
-            retain_graph=True,
-            allow_unused=True
-        )[0]
-
-        # If x1 is not connected to the graph (e.g. prediction mode),
-        # paddle.grad returns None. Fall back to zero gradient.
-        if y1_x1 is None:
-            y1_x1 = paddle.zeros_like(x1)
-        if y2_x1 is None:
-            y2_x1 = paddle.zeros_like(x1)
-
-        # Gibbs-Duhem constraint: x1*y1_x1 + x2*y2_x1 = 0
-        x2 = 1 - x1
-        gd_grad = x1 * y1_x1 + x2 * y2_x1
-
-        # Loss is squared constraint violation (matches original: gd_grad.pow(2).mean())
-        gd_loss = paddle.mean(gd_grad ** 2)
-
-        return gd_loss
-    
     def predict(
         self,
         g1,
@@ -373,7 +310,6 @@ class SolvGNNxMLP(nn.Layer):
         self.in_dim = in_dim
         self.hidden_dim = hidden_dim
         self.n_classes = n_classes
-        self.pinn_lambda = pinn_lambda
         self.mlp_num_hid_layers = mlp_num_hid_layers
 
         # Graph convolutional layers (shared between two solvents)
@@ -401,6 +337,13 @@ class SolvGNNxMLP(nn.Layer):
         elif self.mlp_num_hid_layers != 1:
             raise ValueError("mlp_num_hid_layers must be 1 or 2")
         self.classify3 = nn.Linear(hidden_dim, n_classes)
+
+        # Gibbs-Duhem loss function
+        self.gd_loss_fn = GibbsDuhemLoss(
+            lambda_gd=pinn_lambda,
+            loss_type="mse",
+            create_graph=True
+        )
     
     def forward(
         self,
@@ -415,17 +358,6 @@ class SolvGNNxMLP(nn.Layer):
         while solv1_x.ndim > 1:
             solv1_x = solv1_x.squeeze(-1)
         solv1_x.stop_gradient = False
-
-        gamma1_label = batch_data['gamma1']
-        gamma2_label = batch_data['gamma2']
-        while gamma1_label.ndim > 2:
-            gamma1_label = gamma1_label.squeeze(-1)
-        while gamma2_label.ndim > 2:
-            gamma2_label = gamma2_label.squeeze(-1)
-        if gamma1_label.ndim == 1:
-            gamma1_label = gamma1_label.unsqueeze(-1)
-        if gamma2_label.ndim == 1:
-            gamma2_label = gamma2_label.unsqueeze(-1)
 
         # Extract node features
         h1 = g1.node_feat['h'].cast('float32')
@@ -490,14 +422,15 @@ class SolvGNNxMLP(nn.Layer):
         gamma2_pred = paddle.exp(ln_gamma2_pred)
 
         # Compute losses
+        gamma1_label = batch_data['gamma1']
+        gamma2_label = batch_data['gamma2']
+
         pred_loss = 0.5 * F.mse_loss(ln_gamma1_pred.squeeze(-1), gamma1_label.squeeze(-1)) + \
                     0.5 * F.mse_loss(ln_gamma2_pred.squeeze(-1), gamma2_label.squeeze(-1))
-        
-        gd_loss = self._compute_gibbs_duhem_loss(
-            ln_gamma1_pred, ln_gamma2_pred, solv1_x
-        )
-        
-        total_loss = pred_loss + self.pinn_lambda * gd_loss
+
+        gd_loss = self.gd_loss_fn(ln_gamma1_pred, ln_gamma2_pred, solv1_x)
+
+        total_loss = pred_loss + gd_loss
         
         loss_dict = {
             'pred_loss': pred_loss,
@@ -511,62 +444,11 @@ class SolvGNNxMLP(nn.Layer):
             'ln_gamma1': ln_gamma1_pred,
             'ln_gamma2': ln_gamma2_pred
         }
-        
+
         return {
             'loss_dict': loss_dict,
             'pred_dict': pred_dict
         }
-    
-    def _compute_gibbs_duhem_loss(
-        self,
-        ln_gamma1: paddle.Tensor,
-        ln_gamma2: paddle.Tensor,
-        x1: paddle.Tensor
-    ) -> paddle.Tensor:
-        """Compute Gibbs-Duhem constraint loss."""
-        y1_x1 = paddle.grad(
-            outputs=ln_gamma1.sum(),
-            inputs=x1,
-            create_graph=True,
-            retain_graph=True,
-            allow_unused=True
-        )[0]
-
-        y2_x1 = paddle.grad(
-            outputs=ln_gamma2.sum(),
-            inputs=x1,
-            create_graph=True,
-            retain_graph=True,
-            allow_unused=True
-        )[0]
-
-        if y1_x1 is None:
-            y1_x1 = paddle.zeros_like(x1)
-        if y2_x1 is None:
-            y2_x1 = paddle.zeros_like(x1)
-
-        x2 = 1 - x1
-        gd_grad = x1 * y1_x1 + x2 * y2_x1
-        gd_loss = paddle.mean(gd_grad ** 2)
-
-        return gd_loss
-    
-    def predict(
-        self,
-        g1,
-        g2,
-        x1: paddle.Tensor
-    ) -> Dict[str, paddle.Tensor]:
-        """Predict activity coefficients for a binary mixture."""
-        batch_data = {
-            'g1': g1,
-            'g2': g2,
-            'x1': x1,
-            'gamma1': paddle.zeros_like(x1),
-            'gamma2': paddle.zeros_like(x1)
-        }
-        output = self.forward(batch_data)
-        return output['pred_dict']
 
 
 class GEGNN(nn.Layer):
@@ -605,7 +487,6 @@ class GEGNN(nn.Layer):
         self.in_dim = in_dim
         self.hidden_dim = hidden_dim
         self.n_classes = n_classes
-        self.pinn_lambda = pinn_lambda
 
         # Graph convolutional layers
         self.conv1 = GraphConv(in_dim, hidden_dim)
@@ -624,11 +505,18 @@ class GEGNN(nn.Layer):
         # SLP (Solvation Layer Perceptron) for transforming embeddings with composition
         self.mlp_activation = get_activation(mlp_activation)
         self.mfp_trans = nn.Linear(hidden_dim + 1, hidden_dim + 1)
-        
+
         # MLP classifier for G^E prediction
         self.classify1 = nn.Linear(hidden_dim + 1, hidden_dim)
         self.classify2 = nn.Linear(hidden_dim, hidden_dim)
         self.classify3 = nn.Linear(hidden_dim, n_classes)
+
+        # Gibbs-Duhem loss function
+        self.gd_loss_fn = GibbsDuhemLoss(
+            lambda_gd=pinn_lambda,
+            loss_type="mse",
+            create_graph=True
+        )
     
     def forward(
         self,
@@ -646,14 +534,6 @@ class GEGNN(nn.Layer):
 
         gamma1_label = batch_data['gamma1']
         gamma2_label = batch_data['gamma2']
-        while gamma1_label.ndim > 2:
-            gamma1_label = gamma1_label.squeeze(-1)
-        while gamma2_label.ndim > 2:
-            gamma2_label = gamma2_label.squeeze(-1)
-        if gamma1_label.ndim == 1:
-            gamma1_label = gamma1_label.unsqueeze(-1)
-        if gamma2_label.ndim == 1:
-            gamma2_label = gamma2_label.unsqueeze(-1)
 
         # Extract node features
         h1 = g1.node_feat['h'].cast('float32')
@@ -745,11 +625,9 @@ class GEGNN(nn.Layer):
                     0.5 * F.mse_loss(ln_gamma2_pred.squeeze(-1), gamma2_label.squeeze(-1))
         
         # Compute Gibbs-Duhem constraint loss (should be ~0 by construction)
-        gd_loss = self._compute_gibbs_duhem_loss(
-            ln_gamma1_pred, ln_gamma2_pred, solv1_x
-        )
-        
-        total_loss = pred_loss + self.pinn_lambda * gd_loss
+        gd_loss = self.gd_loss_fn(ln_gamma1_pred, ln_gamma2_pred, solv1_x)
+
+        total_loss = pred_loss + gd_loss
         
         loss_dict = {
             'pred_loss': pred_loss,
@@ -769,41 +647,7 @@ class GEGNN(nn.Layer):
             'loss_dict': loss_dict,
             'pred_dict': pred_dict
         }
-    
-    def _compute_gibbs_duhem_loss(
-        self,
-        ln_gamma1: paddle.Tensor,
-        ln_gamma2: paddle.Tensor,
-        x1: paddle.Tensor
-    ) -> paddle.Tensor:
-        """Compute Gibbs-Duhem constraint loss."""
-        y1_x1 = paddle.grad(
-            outputs=ln_gamma1.sum(),
-            inputs=x1,
-            create_graph=True,
-            retain_graph=True,
-            allow_unused=True
-        )[0]
 
-        y2_x1 = paddle.grad(
-            outputs=ln_gamma2.sum(),
-            inputs=x1,
-            create_graph=True,
-            retain_graph=True,
-            allow_unused=True
-        )[0]
-
-        if y1_x1 is None:
-            y1_x1 = paddle.zeros_like(x1)
-        if y2_x1 is None:
-            y2_x1 = paddle.zeros_like(x1)
-
-        x2 = 1 - x1
-        gd_grad = x1 * y1_x1 + x2 * y2_x1
-        gd_loss = paddle.mean(gd_grad ** 2)
-
-        return gd_loss
-    
     def predict(
         self,
         g1,

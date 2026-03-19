@@ -27,25 +27,29 @@ from typing import Dict, Optional, Callable
 
 class GibbsDuhemLoss(nn.Layer):
     """Gibbs-Duhem constraint loss.
-    
+
     This loss enforces the Gibbs-Duhem thermodynamic constraint for binary mixtures:
     x1 * d(ln(gamma1))/dx1 + x2 * d(ln(gamma2))/dx1 = 0
-    
+
     This ensures thermodynamic consistency of the predicted activity coefficients.
-    
+
     Args:
         lambda_gd: Weight for Gibbs-Duhem loss (default: 1.0)
-        loss_type: Type of loss to use ('mse', 'mae', 'huber') (default: 'mse")
+        loss_type: Type of loss to use ('mse', 'mae', 'huber') (default: 'mse')
+        create_graph: If True, enables higher-order gradients (default: True)
+                     Set to False when using dropout to avoid gradient issues
     """
-    
+
     def __init__(
         self,
         lambda_gd: float = 1.0,
-        loss_type: str = "mse"
+        loss_type: str = "mse",
+        create_graph: bool = True
     ):
         super().__init__()
         self.lambda_gd = lambda_gd
         self.loss_type = loss_type
+        self.create_graph = create_graph
     
     def forward(
         self,
@@ -66,9 +70,8 @@ class GibbsDuhemLoss(nn.Layer):
         Returns:
             Gibbs-Duhem constraint loss (scalar)
         """
-        # Compute derivatives using automatic differentiation
-        x1 = x1.stop_gradient(False)  # Enable gradient computation
-        
+        x1.stop_gradient = False
+
         if model_output_fn is not None:
             # Use provided function to compute model outputs
             # This is useful when the model is explicitly a function of x1
@@ -80,17 +83,25 @@ class GibbsDuhemLoss(nn.Layer):
         dln_gamma1_dx1 = paddle.grad(
             outputs=ln_gamma1,
             inputs=x1,
-            create_graph=True,
-            retain_graph=True
+            create_graph=self.create_graph,
+            retain_graph=True,
+            allow_unused=True
         )[0]
-        
+
         # Compute d(ln(gamma2))/dx1
         dln_gamma2_dx1 = paddle.grad(
             outputs=ln_gamma2,
             inputs=x1,
-            create_graph=True,
-            retain_graph=True
+            create_graph=self.create_graph,
+            retain_graph=True,
+            allow_unused=True
         )[0]
+
+        # Handle None gradients (when prediction mode or no gradient flow)
+        if dln_gamma1_dx1 is None:
+            dln_gamma1_dx1 = paddle.zeros_like(x1)
+        if dln_gamma2_dx1 is None:
+            dln_gamma2_dx1 = paddle.zeros_like(x1)
         
         # Gibbs-Duhem constraint: x1*dln_gamma1/dx1 + (1-x1)*dln_gamma2/dx1 = 0
         gd_constraint = x1 * dln_gamma1_dx1 + (1 - x1) * dln_gamma2_dx1

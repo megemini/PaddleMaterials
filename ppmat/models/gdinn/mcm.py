@@ -31,6 +31,8 @@ import paddle.nn.functional as F
 from typing import Dict, Optional, List
 import paddle.nn.layer as L
 
+from ppmat.losses.gibbs_duhem_loss import GibbsDuhemLoss
+
 
 def get_activation(activation: Optional[str] = None, get_nn: bool = False):
     """Get activation function based on activation name.
@@ -163,23 +165,22 @@ class MCM_MultiMLP(nn.Layer):
         **kwargs
     ):
         super().__init__()
-        
+
         self.mlp_activation = get_activation(mlp_activation, get_nn=True)
         self.dropout_p1 = dropout_hidden
         self.dropout_p2 = dropout_interaction
         self.dim_hidden_channels = dim_hidden_channels
-        self.pinn_lambda = pinn_lambda
-        
+
         # Embedding module for solvent and solute
         self.solvent_emb = MLPModule(
             dim_in=solvent_id_max + 1,
             dim_hidden=self.dim_hidden_channels,
             dropout=self.dropout_p1
         )
-        
+
         # Mid embedding dimension (concatenated solvent + solute)
         mid_emb = 2 * self.dim_hidden_channels
-        
+
         # Build MLP layers for gamma1 prediction
         list_layers_end_1 = [
             nn.Linear(mid_emb + 2, mid_emb),
@@ -190,7 +191,7 @@ class MCM_MultiMLP(nn.Layer):
                 list_layers_end_1.append(nn.Linear(mid_emb, mid_emb))
                 list_layers_end_1.append(self.mlp_activation())
         list_layers_end_1.append(nn.Linear(mid_emb, 1))
-        
+
         # Build MLP layers for gamma2 prediction
         list_layers_end_2 = [
             nn.Linear(mid_emb + 2, mid_emb),
@@ -201,12 +202,19 @@ class MCM_MultiMLP(nn.Layer):
                 list_layers_end_2.append(nn.Linear(mid_emb, mid_emb))
                 list_layers_end_2.append(self.mlp_activation())
         list_layers_end_2.append(nn.Linear(mid_emb, 1))
-        
+
         # Create two separate MLP branches
         self.layers_end = nn.LayerList([
             nn.Sequential(*list_layers_end_1),
             nn.Sequential(*list_layers_end_2)
         ])
+
+        # Gibbs-Duhem loss function
+        self.gd_loss_fn = GibbsDuhemLoss(
+            lambda_gd=pinn_lambda,
+            loss_type="mse",
+            create_graph=False
+        )
     
     def forward(
         self,
@@ -289,12 +297,10 @@ class MCM_MultiMLP(nn.Layer):
                     0.5 * F.mse_loss(ln_gamma2_pred.squeeze(-1), gamma2_label.squeeze(-1))
         
         # Compute Gibbs-Duhem constraint loss
-        gd_loss = self._compute_gibbs_duhem_loss(
-            ln_gamma1_pred, ln_gamma2_pred, solv1_x
-        )
-        
+        gd_loss = self.gd_loss_fn(ln_gamma1_pred, ln_gamma2_pred, solv1_x)
+
         # Total loss
-        total_loss = pred_loss + self.pinn_lambda * gd_loss
+        total_loss = pred_loss + gd_loss
         
         # Build output dictionaries
         loss_dict = {
@@ -314,62 +320,7 @@ class MCM_MultiMLP(nn.Layer):
             'loss_dict': loss_dict,
             'pred_dict': pred_dict
         }
-    
-    def _compute_gibbs_duhem_loss(
-        self,
-        ln_gamma1: paddle.Tensor,
-        ln_gamma2: paddle.Tensor,
-        x1: paddle.Tensor
-    ) -> paddle.Tensor:
-        """Compute Gibbs-Duhem constraint loss.
-        
-        Gibbs-Duhem constraint: x1 * d(ln(gamma1))/dx1 + x2 * d(ln(gamma2))/dx1 = 0
-        
-        Note: Uses create_graph=False to avoid gradient issues with dropout.
-        This means the Gibbs-Duhem loss won't contribute to gradients during
-        backpropagation, but still serves as a regularization term.
-        
-        Args:
-            ln_gamma1: Predicted ln(gamma1) [batch_size, 1]
-            ln_gamma2: Predicted ln(gamma2) [batch_size, 1]
-            x1: Composition of solvent 1 [batch_size]
-        
-        Returns:
-            Gibbs-Duhem constraint loss (scalar)
-        """
-        # Compute d(ln(gamma1))/dx1 with create_graph=False to avoid dropout gradient issues
-        y1_x1 = paddle.grad(
-            outputs=ln_gamma1.sum(),
-            inputs=x1,
-            create_graph=False,  # Changed to False to avoid dropout gradient issues
-            retain_graph=True,
-            allow_unused=True
-        )[0]
-        
-        # Compute d(ln(gamma2))/dx1
-        y2_x1 = paddle.grad(
-            outputs=ln_gamma2.sum(),
-            inputs=x1,
-            create_graph=False,  # Changed to False to avoid dropout gradient issues
-            retain_graph=True,
-            allow_unused=True
-        )[0]
-        
-        # Handle None gradients
-        if y1_x1 is None:
-            y1_x1 = paddle.zeros_like(x1)
-        if y2_x1 is None:
-            y2_x1 = paddle.zeros_like(x1)
-        
-        # Gibbs-Duhem constraint: x1*y1_x1 + x2*y2_x1 = 0
-        x2 = 1 - x1
-        gd_grad = x1 * y1_x1 + x2 * y2_x1
-        
-        # Loss is squared constraint violation
-        gd_loss = paddle.mean(gd_grad ** 2)
-        
-        return gd_loss
-    
+
     def predict(
         self,
         solv1_id: paddle.Tensor,
