@@ -49,7 +49,7 @@ class Config:
     # 测试参数
     BATCH_SIZE = 8
     HIDDEN_DIM = 64
-    IN_DIM = 75
+    IN_DIM = 74  # Match GDI-NN's feature dimension
     NUM_CLASSES = 1
 
     @property

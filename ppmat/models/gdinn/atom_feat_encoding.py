@@ -18,7 +18,9 @@ Atom and bond feature encoding utilities.
 This module provides featurizers for encoding atoms and bonds in molecular graphs.
 """
 
-from typing import Dict
+from typing import Dict, List, Optional, Callable
+from collections import defaultdict
+import itertools
 
 from rdkit import Chem
 
@@ -26,251 +28,507 @@ import paddle
 import numpy as np
 
 
-class CanonicalAtomFeaturizer:
-    """Atom feature encoder that generates 75-dimensional atom features.
+def one_hot_encoding(value, allowable_set: List, encode_unknown: bool = False) -> List[bool]:
+    """One-hot encoding for a value.
 
-    This class provides comprehensive atom features including atom type, degree,
-    formal charge, valence, hybridization, and other chemical properties.
+    Args:
+        value: Value to encode
+        allowable_set: List of allowable values
+        encode_unknown: If True, add an extra element for unknown values
 
-    Features (75 dimensions total):
-        - Atom type (one-hot, 45 types)
-        - Degree (one-hot, 11 types)
-        - Formal charge (1)
-        - Radical electrons (1)
-        - Number of hydrogen atoms (one-hot, 5 types)
-        - Hybridization (one-hot, 5 types)
-        - Aromatic (1)
-        - Mass (1)
-        - Valence (one-hot, 5 types)
+    Returns:
+        List of boolean values where at most one value is True
     """
-    
-    def __init__(self):
-        """Initialize atom featurizer with allowable feature values."""
-        # 45 atom types: H, He, Li, Be, B, C, N, O, F, Ne, Na, Mg, Al, Si, P, S, Cl,
-        # Ar, K, Ca, Sc, Ti, V, Cr, Mn, Fe, Co, Ni, Cu, Zn, Ga, Ge, As, Se, Br,
-        # Kr, Rb, Sr, Y, Zr, Nb, Mo, Tc, Ru, Rh
-        self.allowable_atom_types = [
-            'H', 'He', 'Li', 'Be', 'B', 'C', 'N', 'O', 'F', 'Ne',
-            'Na', 'Mg', 'Al', 'Si', 'P', 'S', 'Cl', 'Ar', 'K', 'Ca',
-            'Sc', 'Ti', 'V', 'Cr', 'Mn', 'Fe', 'Co', 'Ni', 'Cu', 'Zn',
-            'Ga', 'Ge', 'As', 'Se', 'Br', 'Kr', 'Rb', 'Sr', 'Y', 'Zr',
-            'Nb', 'Mo', 'Tc', 'Ru', 'Rh'
+    if encode_unknown and (value not in allowable_set):
+        # Add None as the last element for unknown values
+        return [v == value for v in allowable_set] + [True]
+    else:
+        return [v == value for v in allowable_set]
+
+
+# ============================================================================
+# Atom Featurization Functions
+# ============================================================================
+
+def atom_type_one_hot(atom: Chem.Atom, allowable_set: Optional[List[str]] = None,
+                      encode_unknown: bool = False) -> List[bool]:
+    """One hot encoding for the type of an atom.
+
+    Args:
+        atom: RDKit atom instance
+        allowable_set: Atom types to consider. Default: 43 types from GDI-NN
+        encode_unknown: If True, map inputs not in the allowable set to the additional last element
+
+    Returns:
+        List of boolean values where at most one value is True
+    """
+    if allowable_set is None:
+        allowable_set = [
+            'C', 'N', 'O', 'S', 'F', 'Si', 'P', 'Cl', 'Br', 'Mg', 'Na', 'Ca',
+            'Fe', 'As', 'Al', 'I', 'B', 'V', 'K', 'Tl', 'Yb', 'Sb', 'Sn',
+            'Ag', 'Pd', 'Co', 'Se', 'Ti', 'Zn', 'H', 'Li', 'Ge', 'Cu', 'Au',
+            'Ni', 'Cd', 'In', 'Mn', 'Zr', 'Cr', 'Pt', 'Hg', 'Pb'
         ]
-        
-        # 11 possible degrees (0-10)
-        self.allowable_degree = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-        
-        # 5 possible numbers of hydrogens (0-4)
-        self.allowable_num_hs = [0, 1, 2, 3, 4]
-        
-        # 5 possible valences (0-4)
-        self.allowable_valence = [0, 1, 2, 3, 4]
-        
-        # 5 hybridization types
-        self.allowable_hybridization = [
+    return one_hot_encoding(atom.GetSymbol(), allowable_set, encode_unknown)
+
+
+def atom_degree_one_hot(atom: Chem.Atom, allowable_set: Optional[List[int]] = None,
+                        encode_unknown: bool = False) -> List[bool]:
+    """One hot encoding for the degree of an atom.
+
+    Args:
+        atom: RDKit atom instance
+        allowable_set: Atom degrees to consider. Default: 0-10
+        encode_unknown: If True, map inputs not in the allowable set to the additional last element
+
+    Returns:
+        List of boolean values where at most one value is True
+    """
+    if allowable_set is None:
+        allowable_set = list(range(11))
+    return one_hot_encoding(atom.GetDegree(), allowable_set, encode_unknown)
+
+
+def atom_implicit_valence_one_hot(atom: Chem.Atom, allowable_set: Optional[List[int]] = None,
+                                   encode_unknown: bool = False) -> List[bool]:
+    """One hot encoding for the implicit valence of an atom.
+
+    Args:
+        atom: RDKit atom instance
+        allowable_set: Atom implicit valences to consider. Default: 0-6
+        encode_unknown: If True, map inputs not in the allowable set to the additional last element
+
+    Returns:
+        List of boolean values where at most one value is True
+    """
+    if allowable_set is None:
+        allowable_set = list(range(7))
+    return one_hot_encoding(atom.GetImplicitValence(), allowable_set, encode_unknown)
+
+
+def atom_formal_charge(atom: Chem.Atom) -> List[float]:
+    """Get formal charge for an atom.
+
+    Args:
+        atom: RDKit atom instance
+
+    Returns:
+        List containing one float value
+    """
+    return [float(atom.GetFormalCharge())]
+
+
+def atom_num_radical_electrons(atom: Chem.Atom) -> List[float]:
+    """Get the number of radical electrons for an atom.
+
+    Args:
+        atom: RDKit atom instance
+
+    Returns:
+        List containing one float value
+    """
+    return [float(atom.GetNumRadicalElectrons())]
+
+
+def atom_hybridization_one_hot(atom: Chem.Atom, allowable_set: Optional[List] = None,
+                                encode_unknown: bool = False) -> List[bool]:
+    """One hot encoding for the hybridization of an atom.
+
+    Args:
+        atom: RDKit atom instance
+        allowable_set: Atom hybridizations to consider. Default: SP, SP2, SP3, SP3D, SP3D2
+        encode_unknown: If True, map inputs not in the allowable set to the additional last element
+
+    Returns:
+        List of boolean values where at most one value is True
+    """
+    if allowable_set is None:
+        allowable_set = [
             Chem.rdchem.HybridizationType.SP,
             Chem.rdchem.HybridizationType.SP2,
             Chem.rdchem.HybridizationType.SP3,
             Chem.rdchem.HybridizationType.SP3D,
             Chem.rdchem.HybridizationType.SP3D2
         ]
-    
-    def __call__(self, mol: 'Chem.Mol') -> Dict[str, paddle.Tensor]:
-        """Generate atom features for a molecule.
-        
+    return one_hot_encoding(atom.GetHybridization(), allowable_set, encode_unknown)
+
+
+def atom_is_aromatic(atom: Chem.Atom) -> List[float]:
+    """Get whether the atom is aromatic.
+
+    Args:
+        atom: RDKit atom instance
+
+    Returns:
+        List containing one float value
+    """
+    return [float(atom.GetIsAromatic())]
+
+
+def atom_total_num_H_one_hot(atom: Chem.Atom, allowable_set: Optional[List[int]] = None,
+                              encode_unknown: bool = False) -> List[bool]:
+    """One hot encoding for the total number of Hs of an atom.
+
+    Args:
+        atom: RDKit atom instance
+        allowable_set: Total number of Hs to consider. Default: 0-4
+        encode_unknown: If True, map inputs not in the allowable set to the additional last element
+
+    Returns:
+        List of boolean values where at most one value is True
+    """
+    if allowable_set is None:
+        allowable_set = list(range(5))
+    return one_hot_encoding(atom.GetTotalNumHs(), allowable_set, encode_unknown)
+
+
+# ============================================================================
+# Bond Featurization Functions
+# ============================================================================
+
+def bond_type_one_hot(bond: Chem.Bond, allowable_set: Optional[List] = None,
+                      encode_unknown: bool = False) -> List[bool]:
+    """One hot encoding for the type of a bond.
+
+    Args:
+        bond: RDKit bond instance
+        allowable_set: Bond types to consider. Default: SINGLE, DOUBLE, TRIPLE, AROMATIC
+        encode_unknown: If True, map inputs not in the allowable set to the additional last element
+
+    Returns:
+        List of boolean values where at most one value is True
+    """
+    if allowable_set is None:
+        allowable_set = [
+            Chem.rdchem.BondType.SINGLE,
+            Chem.rdchem.BondType.DOUBLE,
+            Chem.rdchem.BondType.TRIPLE,
+            Chem.rdchem.BondType.AROMATIC
+        ]
+    return one_hot_encoding(bond.GetBondType(), allowable_set, encode_unknown)
+
+
+def bond_is_conjugated(bond: Chem.Bond) -> List[float]:
+    """Get whether the bond is conjugated.
+
+    Args:
+        bond: RDKit bond instance
+
+    Returns:
+        List containing one float value
+    """
+    return [float(bond.GetIsConjugated())]
+
+
+def bond_is_in_ring(bond: Chem.Bond) -> List[float]:
+    """Get whether the bond is in a ring.
+
+    Args:
+        bond: RDKit bond instance
+
+    Returns:
+        List containing one float value
+    """
+    return [float(bond.IsInRing())]
+
+
+def bond_stereo_one_hot(bond: Chem.Bond, allowable_set: Optional[List] = None,
+                        encode_unknown: bool = False) -> List[bool]:
+    """One hot encoding for the stereo configuration of a bond.
+
+    Args:
+        bond: RDKit bond instance
+        allowable_set: Stereo configurations to consider. Default: STEREONONE, STEREOZ, STEREOE,
+                      STEREOCIS, STEREOTRANS, STEREOANY
+        encode_unknown: If True, map inputs not in the allowable set to the additional last element
+
+    Returns:
+        List of boolean values where at most one value is True
+    """
+    if allowable_set is None:
+        allowable_set = [
+            Chem.rdchem.BondStereo.STEREONONE,
+            Chem.rdchem.BondStereo.STEREOZ,
+            Chem.rdchem.BondStereo.STEREOE,
+            Chem.rdchem.BondStereo.STEREOCIS,
+            Chem.rdchem.BondStereo.STEREOTRANS,
+            Chem.rdchem.BondStereo.STEREOANY
+        ]
+    return one_hot_encoding(bond.GetStereo(), allowable_set, encode_unknown)
+
+
+# ============================================================================
+# ConcatFeaturizer
+# ============================================================================
+
+class ConcatFeaturizer:
+    """Concatenate the evaluation results of multiple functions as a single feature.
+
+    Args:
+        func_list: List of functions for computing features from an atom or bond.
+                  Each function should return a list of float or bool values.
+    """
+
+    def __init__(self, func_list: List[Callable]):
+        self.func_list = func_list
+
+    def __call__(self, x) -> List:
+        """Featurize the input data.
+
         Args:
-            mol: RDKit molecule object
-            
+            x: RDKit atom or bond instance
+
         Returns:
-            Dictionary with "h" key containing atom features of shape [num_atoms, 75]
+            List of feature values
+        """
+        return list(itertools.chain.from_iterable([func(x) for func in self.func_list]))
+
+
+# ============================================================================
+# Base Featurizer Classes
+# ============================================================================
+
+class BaseAtomFeaturizer:
+    """An abstract class for atom featurizers.
+
+    Loop over all atoms in a molecule and featurize them with the featurizer_funcs.
+
+    Args:
+        featurizer_funcs: Dictionary mapping feature name to featurization function
+        feat_sizes: Dictionary mapping feature name to the size of the corresponding feature
+    """
+
+    def __init__(self, featurizer_funcs: Dict[str, Callable], feat_sizes: Optional[Dict[str, int]] = None):
+        self.featurizer_funcs = featurizer_funcs
+        self._feat_sizes = feat_sizes if feat_sizes is not None else {}
+
+    def feat_size(self, feat_name: Optional[str] = None) -> int:
+        """Get the feature size for feat_name.
+
+        Args:
+            feat_name: Feature for query
+
+        Returns:
+            Feature size for the feature with name feat_name
+        """
+        if feat_name is None:
+            assert len(self.featurizer_funcs) == 1, \
+                'feat_name should be provided if there are more than one features'
+            feat_name = list(self.featurizer_funcs.keys())[0]
+
+        if feat_name not in self.featurizer_funcs:
+            raise ValueError(f'feat_name {feat_name} not in {list(self.featurizer_funcs.keys())}')
+
+        if feat_name not in self._feat_sizes:
+            # Compute feature size by applying the function to a test atom
+            atom = Chem.MolFromSmiles('C').GetAtomWithIdx(0)
+            self._feat_sizes[feat_name] = len(self.featurizer_funcs[feat_name](atom))
+
+        return self._feat_sizes[feat_name]
+
+    def __call__(self, mol: Chem.Mol) -> Dict[str, paddle.Tensor]:
+        """Featurize all atoms in a molecule.
+
+        Args:
+            mol: RDKit molecule instance
+
+        Returns:
+            Dictionary mapping feature name to feature tensor of shape [num_atoms, feat_size]
         """
         num_atoms = mol.GetNumAtoms()
-        features = np.zeros((num_atoms, 75), dtype=np.float32)
-        
+        atom_features = defaultdict(list)
+
+        # Compute features for each atom
         for i in range(num_atoms):
             atom = mol.GetAtomWithIdx(i)
-            feature = self._featurize_atom(atom)
-            features[i] = feature
-        
-        return {"h": paddle.to_tensor(features)}
-    
-    def _featurize_atom(self, atom: 'Chem.Atom') -> np.ndarray:
-        """Generate features for a single atom.
-        
-        Args:
-            atom: RDKit atom object
-            
-        Returns:
-            Feature vector of shape [75]
-        """
-        feature = np.zeros(75, dtype=np.float32)
-        idx = 0
-        
-        # 1. Atom type (one-hot, 45)
-        atom_type = atom.GetSymbol()
-        for i, t in enumerate(self.allowable_atom_types):
-            if atom_type == t:
-                feature[idx + i] = 1.0
-        idx += len(self.allowable_atom_types)
-        
-        # 2. Degree (one-hot, 11)
-        degree = atom.GetDegree()
-        for i, d in enumerate(self.allowable_degree):
-            if degree == d:
-                feature[idx + i] = 1.0
-        idx += len(self.allowable_degree)
-        
-        # 3. Formal charge (1)
-        feature[idx] = float(atom.GetFormalCharge())
-        idx += 1
-        
-        # 4. Radical electrons (1)
-        feature[idx] = float(atom.GetNumRadicalElectrons())
-        idx += 1
-        
-        # 5. Number of hydrogens (one-hot, 5)
-        num_hs = atom.GetTotalNumHs()
-        for i, h in enumerate(self.allowable_num_hs):
-            if num_hs == h:
-                feature[idx + i] = 1.0
-        idx += len(self.allowable_num_hs)
-        
-        # 6. Hybridization (one-hot, 5)
-        hybridization = atom.GetHybridization()
-        for i, h in enumerate(self.allowable_hybridization):
-            if hybridization == h:
-                feature[idx + i] = 1.0
-        idx += len(self.allowable_hybridization)
-        
-        # 7. Aromatic (1)
-        feature[idx] = float(atom.GetIsAromatic())
-        idx += 1
-        
-        # 8. Mass (1)
-        feature[idx] = float(atom.GetMass())
-        idx += 1
-        
-        # 9. Valence (one-hot, 5)
-        valence = atom.GetTotalValence()
-        for i, v in enumerate(self.allowable_valence):
-            if valence == v:
-                feature[idx + i] = 1.0
-        idx += len(self.allowable_valence)
-        
-        return feature
+            for feat_name, feat_func in self.featurizer_funcs.items():
+                atom_features[feat_name].append(feat_func(atom))
+
+        # Stack the features and convert to tensors
+        processed_features = {}
+        for feat_name, feat_list in atom_features.items():
+            feat = np.stack(feat_list).astype(np.float32)
+            processed_features[feat_name] = paddle.to_tensor(feat)
+
+        return processed_features
 
 
-class CanonicalBondFeaturizer:
-    """Bond feature encoder.
-    
-    This class provides comprehensive bond features including bond type,
-    conjugation, ring membership, and stereochemistry.
-    
-    Features (12 dimensions total):
-        - Bond type (one-hot, 4 types: single, double, triple, aromatic)
-        - Conjugated (1)
-        - In ring (1)
-        - Stereo (one-hot, 6 types)
+class BaseBondFeaturizer:
+    """An abstract class for bond featurizers.
+
+    Loop over all bonds in a molecule and featurize them with the featurizer_funcs.
+
+    Args:
+        featurizer_funcs: Dictionary mapping feature name to featurization function
+        feat_sizes: Dictionary mapping feature name to the size of the corresponding feature
+        self_loop: Whether to add self-loops
     """
-    
-    def __init__(self, self_loop: bool = False):
-        """Initialize bond featurizer.
-        
-        Args:
-            self_loop: Whether to include self-loops
-        """
+
+    def __init__(self, featurizer_funcs: Dict[str, Callable], feat_sizes: Optional[Dict[str, int]] = None,
+                 self_loop: bool = False):
+        self.featurizer_funcs = featurizer_funcs
+        self._feat_sizes = feat_sizes if feat_sizes is not None else {}
         self.self_loop = self_loop
-    
-    def __call__(self, mol: 'Chem.Mol') -> Dict[str, paddle.Tensor]:
-        """Generate bond features for a molecule.
-        
+
+    def feat_size(self, feat_name: Optional[str] = None) -> int:
+        """Get the feature size for feat_name.
+
         Args:
-            mol: RDKit molecule object
-            
+            feat_name: Feature for query
+
         Returns:
-            Dictionary with "e" key containing bond features of shape [num_edges, 12]
+            Feature size for the feature with name feat_name
+        """
+        if feat_name is None:
+            assert len(self.featurizer_funcs) == 1, \
+                'feat_name should be provided if there are more than one features'
+            feat_name = list(self.featurizer_funcs.keys())[0]
+
+        if feat_name not in self.featurizer_funcs:
+            raise ValueError(f'feat_name {feat_name} not in {list(self.featurizer_funcs.keys())}')
+
+        if feat_name not in self._feat_sizes:
+            # Compute feature size by applying the function to a test bond
+            mol = Chem.MolFromSmiles('CO')
+            bond = mol.GetBondWithIdx(0)
+            self._feat_sizes[feat_name] = len(self.featurizer_funcs[feat_name](bond))
+
+        return self._feat_sizes[feat_name]
+
+    def __call__(self, mol: Chem.Mol) -> Dict[str, paddle.Tensor]:
+        """Featurize all bonds in a molecule.
+
+        Args:
+            mol: RDKit molecule instance
+
+        Returns:
+            Dictionary containing:
+                - 'src': Source node indices
+                - 'dst': Destination node indices
+                - Feature tensors for each feature name
         """
         num_atoms = mol.GetNumAtoms()
-        
+        num_bonds = mol.GetNumBonds()
+
         # Collect bond information
         bonds = []
-        for bond in mol.GetBonds():
+        bond_features = defaultdict(list)
+
+        for i in range(num_bonds):
+            bond = mol.GetBondWithIdx(i)
             src = bond.GetBeginAtomIdx()
             dst = bond.GetEndAtomIdx()
-            features = self._featurize_bond(bond)
-            bonds.append((src, dst, features))
-            bonds.append((dst, src, features))
-        
+
+            # Compute features for this bond
+            for feat_name, feat_func in self.featurizer_funcs.items():
+                feat = feat_func(bond)
+                # Add the same features for both directions (bidirectional graph)
+                bond_features[feat_name].extend([feat, feat.copy()])
+
+            # Add edges in both directions
+            bonds.append((src, dst))
+            bonds.append((dst, src))
+
         # Add self-loops if needed
         if self.self_loop:
             for i in range(num_atoms):
-                self_loop_feat = np.zeros(12, dtype=np.float32)
-                self_loop_feat[0] = 1.0  # Single bond
-                bonds.append((i, i, self_loop_feat))
-        
+                bonds.append((i, i))
+                for feat_name in self.featurizer_funcs.keys():
+                    # Self-loop features: all zeros except a marker
+                    feat_size = self.feat_size(feat_name)
+                    self_loop_feat = [0.0] * feat_size
+                    bond_features[feat_name].append(self_loop_feat)
+
         # Convert to arrays
         if len(bonds) == 0:
             # Handle edge case of single atom
             src = np.array([0], dtype=np.int64)
             dst = np.array([0], dtype=np.int64)
-            edge_feat = np.zeros((1, 12), dtype=np.float32)
         else:
             src = np.array([b[0] for b in bonds], dtype=np.int64)
             dst = np.array([b[1] for b in bonds], dtype=np.int64)
-            edge_feat = np.stack([b[2] for b in bonds], axis=0)
-        
-        return {
-            "src": paddle.to_tensor(src),
-            "dst": paddle.to_tensor(dst),
-            "e": paddle.to_tensor(edge_feat)
+
+        # Stack features
+        result = {
+            'src': paddle.to_tensor(src),
+            'dst': paddle.to_tensor(dst)
         }
-    
-    def _featurize_bond(self, bond: 'Chem.Bond') -> np.ndarray:
-        """Generate features for a single bond.
-        
-        Args:
-            bond: RDKit bond object
-            
-        Returns:
-            Feature vector of shape [12]
-        """
-        feature = np.zeros(12, dtype=np.float32)
-        idx = 0
-        
-        # 1. Bond type (one-hot, 4)
-        bond_type = bond.GetBondType()
-        if bond_type == Chem.rdchem.BondType.SINGLE:
-            feature[idx] = 1.0
-        elif bond_type == Chem.rdchem.BondType.DOUBLE:
-            feature[idx + 1] = 1.0
-        elif bond_type == Chem.rdchem.BondType.TRIPLE:
-            feature[idx + 2] = 1.0
-        elif bond_type == Chem.rdchem.BondType.AROMATIC:
-            feature[idx + 3] = 1.0
-        idx += 4
-        
-        # 2. Conjugated (1)
-        feature[idx] = float(bond.GetIsConjugated())
-        idx += 1
-        
-        # 3. In ring (1)
-        feature[idx] = float(bond.IsInRing())
-        idx += 1
-        
-        # 4. Stereo (one-hot, 6)
-        stereo = bond.GetStereo()
-        if stereo == Chem.rdchem.BondStereo.STEREONONE:
-            feature[idx] = 1.0
-        elif stereo == Chem.rdchem.BondStereo.STEREOZ:
-            feature[idx + 1] = 1.0
-        elif stereo == Chem.rdchem.BondStereo.STEREOE:
-            feature[idx + 2] = 1.0
-        elif stereo == Chem.rdchem.BondStereo.STEREOCIS:
-            feature[idx + 3] = 1.0
-        elif stereo == Chem.rdchem.BondStereo.STEREOTRANS:
-            feature[idx + 4] = 1.0
-        elif stereo == Chem.rdchem.BondStereo.STEREOANY:
-            feature[idx + 5] = 1.0
-        idx += 6
-        
-        return feature
+
+        for feat_name, feat_list in bond_features.items():
+            feat = np.stack(feat_list).astype(np.float32)
+            result[feat_name] = paddle.to_tensor(feat)
+
+        return result
+
+
+# ============================================================================
+# Canonical Featurizers
+# ============================================================================
+
+class CanonicalAtomFeaturizer(BaseAtomFeaturizer):
+    """A default featurizer for atoms.
+
+    This implementation matches GDI-NN's CanonicalAtomFeaturizer for compatibility.
+
+    The atom features include:
+    * One hot encoding of the atom type (43 types)
+    * One hot encoding of the atom degree (0-10)
+    * One hot encoding of the implicit valence (0-6)
+    * Formal charge of the atom
+    * Number of radical electrons of the atom
+    * One hot encoding of the atom hybridization (SP, SP2, SP3, SP3D, SP3D2)
+    * Whether the atom is aromatic
+    * One hot encoding of the number of total Hs on the atom (0-4)
+
+    Total: 74 dimensions
+
+    Args:
+        atom_data_field: Name for storing atom features, default to 'h'
+    """
+
+    def __init__(self, atom_data_field: str = 'h'):
+        super(CanonicalAtomFeaturizer, self).__init__(
+            featurizer_funcs={
+                atom_data_field: ConcatFeaturizer([
+                    atom_type_one_hot,
+                    atom_degree_one_hot,
+                    atom_implicit_valence_one_hot,
+                    atom_formal_charge,
+                    atom_num_radical_electrons,
+                    atom_hybridization_one_hot,
+                    atom_is_aromatic,
+                    atom_total_num_H_one_hot
+                ])
+            }
+        )
+
+
+class CanonicalBondFeaturizer(BaseBondFeaturizer):
+    """A default featurizer for bonds.
+
+    The bond features include:
+    * One hot encoding of the bond type (SINGLE, DOUBLE, TRIPLE, AROMATIC)
+    * Whether the bond is conjugated
+    * Whether the bond is in a ring
+    * One hot encoding of the stereo configuration (STEREONONE, STEREOZ, STEREOE,
+      STEREOCIS, STEREOTRANS, STEREOANY)
+
+    Total: 12 dimensions
+
+    Args:
+        bond_data_field: Name for storing bond features, default to 'e'
+        self_loop: Whether to add self-loops
+    """
+
+    def __init__(self, bond_data_field: str = 'e', self_loop: bool = False):
+        super(CanonicalBondFeaturizer, self).__init__(
+            featurizer_funcs={
+                bond_data_field: ConcatFeaturizer([
+                    bond_type_one_hot,
+                    bond_is_conjugated,
+                    bond_is_in_ring,
+                    bond_stereo_one_hot
+                ])
+            },
+            self_loop=self_loop
+        )

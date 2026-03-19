@@ -223,7 +223,7 @@ def test_model_forward():
         
         # 创建模型 (使用与原始 GDI-NN 一致的默认参数)
         model = SolvGNN(
-            in_dim=75,
+            in_dim=74,  # Match GDI-NN's feature dimension
             hidden_dim=64,
             n_classes=1,
             num_step_message_passing=1,
@@ -301,7 +301,7 @@ def test_training_step():
         
         # 创建模型 (使用与原始 GDI-NN 一致的默认参数)
         model = SolvGNN(
-            in_dim=75,
+            in_dim=74,  # Match GDI-NN's feature dimension
             hidden_dim=64,
             n_classes=1,
             num_step_message_passing=1,
@@ -391,7 +391,7 @@ def test_solvgnn_xmlp_forward():
         
         # 创建模型
         model = SolvGNNxMLP(
-            in_dim=75,
+            in_dim=74,  # Match GDI-NN's feature dimension
             hidden_dim=64,
             n_classes=1,
             mlp_num_hid_layers=2,
@@ -469,7 +469,7 @@ def test_solvgnn_xmlp_training():
         
         # 创建模型
         model = SolvGNNxMLP(
-            in_dim=75,
+            in_dim=74,  # Match GDI-NN's feature dimension
             hidden_dim=64,
             n_classes=1,
             mlp_num_hid_layers=2,
@@ -557,7 +557,7 @@ def test_gegnn_forward():
         
         # 创建模型
         model = GEGNN(
-            in_dim=75,
+            in_dim=74,  # Match GDI-NN's feature dimension
             hidden_dim=64,
             n_classes=1,
             num_step_message_passing=1,
@@ -637,7 +637,7 @@ def test_gegnn_training():
         
         # 创建模型
         model = GEGNN(
-            in_dim=75,
+            in_dim=74,  # Match GDI-NN's feature dimension
             hidden_dim=64,
             n_classes=1,
             num_step_message_passing=1,
@@ -1056,7 +1056,7 @@ def test_gibbs_duhem_loss_with_model():
         
         # 创建模型
         model = SolvGNN(
-            in_dim=75,
+            in_dim=74,  # Match GDI-NN's feature dimension
             hidden_dim=64,
             n_classes=1,
             num_step_message_passing=1,
@@ -1172,7 +1172,7 @@ def test_prediction():
         
         # 创建模型 (使用与原始 GDI-NN 一致的默认参数)
         model = SolvGNN(
-            in_dim=75,
+            in_dim=74,  # Match GDI-NN's feature dimension
             hidden_dim=64,
             n_classes=1,
             num_step_message_passing=1,
