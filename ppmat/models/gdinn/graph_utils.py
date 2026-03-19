@@ -209,38 +209,6 @@ def mean_nodes(graph: MolecularGraph, feat_name: str = "h") -> paddle.Tensor:
     return result
 
 
-def sum_nodes(graph: MolecularGraph, feat_name: str = "h") -> paddle.Tensor:
-    """Compute sum of node features per graph in batch.
-    
-    This function replaces dgl.sum_nodes() by summing node features
-    within each graph in the batch using batch_num_nodes information.
-    
-    Args:
-        graph: Batched MolecularGraph object
-        feat_name: Name of node feature to sum (default: "h")
-        
-    Returns:
-        Tensor of shape [batch_size, feat_dim] with summed features
-    """
-    if graph.batch_num_nodes is None:
-        raise ValueError("Graph is not batched. batch_num_nodes is None.")
-    
-    node_feats = graph.node_feat[feat_name]  # [total_nodes, feat_dim]
-    batch_num_nodes = graph.batch_num_nodes  # [batch_size]
-    
-    # Split node features by graph
-    split_feats = paddle.split(node_feats, batch_num_nodes.tolist())
-    
-    # Compute sum for each graph
-    sums = []
-    for feats in split_feats:
-        sums.append(paddle.sum(feats, axis=0, keepdim=True))
-    
-    result = paddle.concat(sums, axis=0)  # [batch_size, feat_dim]
-    
-    return result
-
-
 def segment_sum(data: paddle.Tensor, segment_ids: paddle.Tensor, num_segments: int) -> paddle.Tensor:
     """Sum data along segments defined by segment_ids.
     

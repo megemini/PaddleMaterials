@@ -34,7 +34,7 @@ Model:
     pinn_lambda: 1.0
 
 Loss:
-  __class_name__: "GDICombinedLoss"
+  __class_name__: "GibbsDuhemLoss"
   __init_params__:
     lambda_gd: 1.0
     gd_start_epoch: 5

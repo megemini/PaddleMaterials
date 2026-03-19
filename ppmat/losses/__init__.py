@@ -21,8 +21,6 @@ from ppmat.losses.l1_loss import SmoothL1Loss
 from ppmat.losses.loss_warper import LossWarper
 from ppmat.losses.mse_loss import MSELoss
 from ppmat.losses.gibbs_duhem_loss import GibbsDuhemLoss
-from ppmat.losses.gibbs_duhem_loss import GDICombinedLoss
-from ppmat.losses.gibbs_duhem_loss import WeightedGDICombinedLoss
 
 __all__ = [
     "MSELoss",
@@ -32,8 +30,6 @@ __all__ = [
     "HuberLoss",
     "LossWarper",
     "GibbsDuhemLoss",
-    "GDICombinedLoss",
-    "WeightedGDICombinedLoss",
     "build_loss",
 ]
 

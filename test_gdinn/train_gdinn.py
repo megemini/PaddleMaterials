@@ -27,7 +27,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'ppmat'))
 
 from ppmat.datasets import build_dataloader
 from ppmat.models import SolvGNN
-from ppmat.losses import GDICombinedLoss
+from ppmat.losses import GibbsDuhemLoss
 from ppmat.metrics import MAE, RMSE, R2
 
 
@@ -188,13 +188,7 @@ def train(args):
     # 创建损失函数
     print("\n[3/5] 创建损失函数...")
     try:
-        criterion = GDICombinedLoss(
-            lambda_gd=1.0,
-            gd_start_epoch=5,
-            loss_type='mse',
-            gd_loss_type='mse',
-            use_ln_gamma=True
-        )
+        criterion = GibbsDuhemLoss()
         print("✓ 损失函数创建成功")
     except Exception as e:
         print(f"✗ 损失函数创建失败: {e}")

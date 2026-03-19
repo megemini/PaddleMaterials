@@ -15,11 +15,9 @@
 from ppmat.models.gdinn.graph_utils import MolecularGraph
 from ppmat.models.gdinn.graph_utils import batch_graphs
 from ppmat.models.gdinn.graph_utils import mean_nodes
-from ppmat.models.gdinn.graph_utils import sum_nodes
 
 __all__ = [
     "MolecularGraph",
     "batch_graphs",
     "mean_nodes",
-    "sum_nodes",
 ]

@@ -294,7 +294,7 @@ def test_training_step():
     
     try:
         from ppmat.models import SolvGNN
-        from ppmat.losses import GDICombinedLoss
+        from ppmat.losses import GibbsDuhemLoss
         from ppmat.datasets import BinaryActivityDataset
         from paddle.io import DataLoader, BatchSampler
         from ppmat.datasets.collate_fn import BinaryActivityCollator
@@ -309,13 +309,7 @@ def test_training_step():
         )
 
         # 创建损失函数
-        criterion = GDICombinedLoss(
-            lambda_gd=1.0,
-            gd_start_epoch=5,
-            loss_type='mse',
-            gd_loss_type='mse',
-            use_ln_gamma=True
-        )
+        criterion = GibbsDuhemLoss()
 
         print(f"✓ 模型和损失函数创建成功")
 
