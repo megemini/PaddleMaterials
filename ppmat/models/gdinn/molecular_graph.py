@@ -33,7 +33,7 @@ from ppmat.models.gdinn.graph_utils import MolecularGraph
 
 
 def construct_bigraph_from_mol(
-    mol: 'Chem.Mol',
+    mol: Chem.rdchem.Mol,
     add_self_loop: bool = False
 ) -> tuple:
     """Construct bidirectional graph edges from a molecule.

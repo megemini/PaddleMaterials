@@ -449,29 +449,6 @@ class BinaryActivityDataset(Dataset):
 
         return self.solvent_data[solvent_id]
 
-    def get_solvent_list(self) -> List[str]:
-        """Get list of unique solvent IDs in dataset.
-
-        Returns:
-            List of unique solvent IDs
-        """
-        solvents = set()
-        for row in self.data:
-            solvents.add(row['solv1'])
-            solvents.add(row['solv2'])
-        return list(solvents)
-
-    def get_composition_range(self) -> Dict[str, float]:
-        """Get the range of compositions in dataset.
-
-        Returns:
-            Dictionary with 'min' and 'max' values
-        """
-        compositions = [self._parse_value(row['solv1_x']) for row in self.data]
-        return {
-            'min': min(compositions),
-            'max': max(compositions)
-        }
 
     def search_chemical(self, chemical_name: str) -> List:
         """Search for a chemical by name.
