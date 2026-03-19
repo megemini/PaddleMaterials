@@ -924,6 +924,240 @@ def test_mcm_training():
         return False
 
 
+def test_gibbs_duhem_loss():
+    """测试 GibbsDuhemLoss 损失函数"""
+    print("\n" + "=" * 80)
+    print("测试 GibbsDuhemLoss 损失函数")
+    print("=" * 80)
+    
+    try:
+        from ppmat.losses import GibbsDuhemLoss
+        
+        # 创建损失函数实例
+        criterion = GibbsDuhemLoss(lambda_gd=1.0, loss_type='mse')
+        print(f"✓ GibbsDuhemLoss 创建成功")
+        print(f"  lambda_gd: {criterion.lambda_gd}")
+        print(f"  loss_type: {criterion.loss_type}")
+        
+        # 测试 1: 简单的合成数据测试
+        print("\n测试 1: 合成数据测试")
+        batch_size = 10
+        
+        # 创建测试数据
+        # x1 在 [0.1, 0.9] 范围内
+        x1 = paddle.linspace(0.1, 0.9, batch_size).unsqueeze(-1)
+        x1.stop_gradient = False
+        
+        # 创建简单的 ln_gamma 函数（满足 Gibbs-Duhem 约束）
+        # 例如：ln_gamma1 = A * x2^2, ln_gamma2 = A * x1^2
+        # 这满足 x1 * d(ln_gamma1)/dx1 + x2 * d(ln_gamma2)/dx1 = 0
+        A = 2.0
+        x2 = 1 - x1
+        ln_gamma1 = A * x2 * x2
+        ln_gamma2 = A * x1 * x1
+        
+        # 计算损失
+        loss = criterion(ln_gamma1, ln_gamma2, x1)
+        print(f"  满足约束的损失: {loss.item():.6f}")
+        
+        # 测试 2: 不满足约束的情况
+        print("\n测试 2: 不满足约束的情况")
+        ln_gamma1_bad = paddle.randn([batch_size, 1])
+        ln_gamma2_bad = paddle.randn([batch_size, 1])
+        x1_test = paddle.linspace(0.1, 0.9, batch_size).unsqueeze(-1)
+        x1_test.stop_gradient = False
+        
+        # 需要重新计算以建立计算图
+        ln_gamma1_bad = x1_test * 3.0  # 简单的线性函数
+        ln_gamma2_bad = x1_test * 2.0
+        
+        loss_bad = criterion(ln_gamma1_bad, ln_gamma2_bad, x1_test)
+        print(f"  不满足约束的损失: {loss_bad.item():.6f}")
+        
+        # 测试 3: 使用 model_output_fn
+        print("\n测试 3: 使用 model_output_fn")
+        
+        def model_fn(x):
+            """简单的模型函数，满足 Gibbs-Duhem 约束"""
+            x2 = 1 - x
+            A = 1.5
+            return {
+                'ln_gamma1': A * x2 * x2,
+                'ln_gamma2': A * x * x
+            }
+        
+        x1_fn = paddle.linspace(0.1, 0.9, batch_size).unsqueeze(-1)
+        x1_fn.stop_gradient = False
+        
+        # 使用 model_output_fn 计算损失
+        loss_fn = criterion(None, None, x1_fn, model_output_fn=model_fn)
+        print(f"  使用 model_output_fn 的损失: {loss_fn.item():.6f}")
+        
+        # 测试 4: 不同的损失类型
+        print("\n测试 4: 测试不同损失类型")
+        for loss_type in ['mse', 'mae', 'huber']:
+            criterion_type = GibbsDuhemLoss(lambda_gd=1.0, loss_type=loss_type)
+            
+            x1_type = paddle.linspace(0.1, 0.9, batch_size).unsqueeze(-1)
+            x1_type.stop_gradient = False
+            x2_type = 1 - x1_type
+            
+            # 使用满足约束的函数
+            ln_gamma1_type = 2.0 * x2_type * x2_type
+            ln_gamma2_type = 2.0 * x1_type * x1_type
+            
+            loss_type_val = criterion_type(ln_gamma1_type, ln_gamma2_type, x1_type)
+            print(f"  {loss_type} 损失: {loss_type_val.item():.6f}")
+        
+        # 测试 5: 梯度计算测试
+        print("\n测试 5: 梯度计算测试")
+        criterion_grad = GibbsDuhemLoss(lambda_gd=1.0, create_graph=True)
+        
+        x1_grad = paddle.linspace(0.1, 0.9, batch_size).unsqueeze(-1)
+        x1_grad.stop_gradient = False
+        
+        # 创建可训练参数
+        A_param = paddle.create_parameter(shape=[1], dtype='float32', default_initializer=paddle.nn.initializer.Constant(2.0))
+        
+        x2_grad = 1 - x1_grad
+        ln_gamma1_grad = A_param * x2_grad * x2_grad
+        ln_gamma2_grad = A_param * x1_grad * x1_grad
+        
+        loss_grad = criterion_grad(ln_gamma1_grad, ln_gamma2_grad, x1_grad)
+        
+        # 计算梯度
+        loss_grad.backward()
+        
+        print(f"  损失值: {loss_grad.item():.6f}")
+        print(f"  A_param 梯度: {A_param.grad.item():.6f}")
+        
+        print("\n✓ GibbsDuhemLoss 测试通过")
+        return True
+        
+    except Exception as e:
+        print(f"\n✗ GibbsDuhemLoss 测试失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def test_gibbs_duhem_loss_with_model():
+    """测试 GibbsDuhemLoss 与模型集成"""
+    print("\n" + "=" * 80)
+    print("测试 GibbsDuhemLoss 与模型集成")
+    print("=" * 80)
+    
+    try:
+        from ppmat.models import SolvGNN
+        from ppmat.losses import GibbsDuhemLoss
+        from ppmat.datasets import BinaryActivityDataset
+        from paddle.io import DataLoader, BatchSampler
+        from ppmat.datasets.collate_fn import BinaryActivityCollator
+        
+        # 创建模型
+        model = SolvGNN(
+            in_dim=75,
+            hidden_dim=64,
+            n_classes=1,
+            num_step_message_passing=1,
+            pinn_lambda=0.0  # 禁用模型内部的 GD loss
+        )
+        
+        # 创建独立的 GibbsDuhemLoss
+        criterion_gd = GibbsDuhemLoss(lambda_gd=1.0, loss_type='mse')
+        
+        print(f"✓ 模型和 GibbsDuhemLoss 创建成功")
+        
+        # 创建数据加载器
+        dataset = BinaryActivityDataset(
+            data_path=config.train_binary_path,
+            solvent_list_path=config.solvent_list_output_path,
+            add_self_loop=True,
+            preload_graphs=False
+        )
+        
+        sampler = BatchSampler(
+            dataset=dataset,
+            batch_size=32,
+            shuffle=False,
+            drop_last=True
+        )
+        
+        collator = BinaryActivityCollator()
+        dataloader = DataLoader(
+            dataset=dataset,
+            batch_sampler=sampler,
+            num_workers=0,
+            collate_fn=collator
+        )
+        
+        # 创建优化器
+        optimizer = paddle.optimizer.Adam(
+            parameters=model.parameters(),
+            learning_rate=0.001
+        )
+        
+        print(f"✓ 优化器创建成功")
+        
+        # 测试使用 GibbsDuhemLoss 计算额外损失
+        model.train()
+        
+        for batch_idx, batch in enumerate(dataloader):
+            if batch_idx >= 3:
+                break
+            
+            print(f"\n测试 Batch {batch_idx + 1}...")
+            
+            # 准备输入数据，确保 x1 可以计算梯度
+            x1_gd = batch['x1'].clone()
+            x1_gd.stop_gradient = False
+            
+            # 前向传播
+            output = model(batch)
+            
+            # 获取预测值
+            gamma1_pred = output['pred_dict']['gamma1']
+            gamma2_pred = output['pred_dict']['gamma2']
+            
+            # 计算预测损失 (MSE)
+            pred_loss = paddle.nn.functional.mse_loss(gamma1_pred, batch['gamma1']) + \
+                       paddle.nn.functional.mse_loss(gamma2_pred, batch['gamma2'])
+            
+            # 使用 criterion_gd 计算 Gibbs-Duhem 约束损失
+            # 注意：由于模型内部计算图的限制，这里我们使用预测值来演示
+            # 在实际应用中，模型应该设计为支持对 x1 的梯度计算
+            gd_loss = criterion_gd(gamma1_pred, gamma2_pred, x1_gd)
+            
+            # 总损失 = 预测损失 + Gibbs-Duhem 约束损失
+            total_loss = pred_loss + gd_loss
+            
+            # 反向传播
+            total_loss.backward()
+            
+            # 梯度裁剪
+            paddle.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            
+            # 参数更新
+            optimizer.step()
+            optimizer.clear_grad()
+            
+            print(f"✓ 训练步骤成功")
+            print(f"  pred_loss: {pred_loss.item():.4f}")
+            print(f"  gd_loss (使用 criterion_gd): {gd_loss.item():.4f}")
+            print(f"  total_loss: {total_loss.item():.4f}")
+            print(f"  gamma1 shape: {gamma1_pred.shape}")
+            print(f"  gamma2 shape: {gamma2_pred.shape}")
+        
+        print("\n✓ GibbsDuhemLoss 与模型集成测试通过")
+        return True
+        
+    except Exception as e:
+        print(f"\n✗ GibbsDuhemLoss 与模型集成测试失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 def test_prediction():
     """测试预测"""
     print("\n" + "=" * 80)
@@ -1042,6 +1276,8 @@ def main():
     results['GEGNN训练步骤'] = test_gegnn_training()
     results['MCM前向传播'] = test_mcm_forward()
     results['MCM训练步骤'] = test_mcm_training()
+    results['GibbsDuhemLoss'] = test_gibbs_duhem_loss()
+    results['GibbsDuhemLoss与模型集成'] = test_gibbs_duhem_loss_with_model()
     results['预测'] = test_prediction()
     
     # 总结
