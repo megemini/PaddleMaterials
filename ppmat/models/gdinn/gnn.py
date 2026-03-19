@@ -25,7 +25,7 @@ import paddle.nn as nn
 import paddle.nn.functional as F
 from typing import Dict, Optional, Tuple
 
-from ppmat.models.gdinn.layers import GraphConv, MPNNConv
+from ppmat.models.gdinn.layers import GraphConv, MPNNConv, get_activation_func
 from ppmat.models.gdinn.graph_utils import mean_nodes, generate_empty_solvsys
 
 
@@ -89,27 +89,10 @@ class SolvGNN(nn.Layer):
 
         # MLP classifier (shared for both solvents)
         # Input dimension is hidden_dim (output of global_conv)
-        self.mlp_activation = self._get_activation_func(mlp_activation)
+        self.mlp_activation = get_activation_func(mlp_activation)
         self.classify1 = nn.Linear(hidden_dim, hidden_dim)
         self.classify2 = nn.Linear(hidden_dim, hidden_dim)
         self.classify3 = nn.Linear(hidden_dim, n_classes)
-    
-    def _get_activation_func(self, activation: Optional[str] = None):
-        """Get activation function based on activation name (matches original get_activation)."""
-        if activation is None or activation in ["relu", "ReLU", "RELU"]:
-            return F.relu
-        elif activation in ["elu", "ELU"]:
-            return F.elu
-        elif activation in ["leaky_relu", "LeakyReLU"]:
-            return F.leaky_relu
-        elif activation in ["sigmoid", "Sigmoid"]:
-            return F.sigmoid
-        elif activation in ["softplus", "Softplus"]:
-            return F.softplus
-        elif activation in ["silu", "SiLU"]:
-            return F.silu
-        else:
-            return F.relu
     
     def forward(
         self,
@@ -409,30 +392,13 @@ class SolvGNNxMLP(nn.Layer):
         # MLP classifier
         # Input dimension is hidden_dim + 1 (composition added AFTER global_conv)
         self.mlp_dropout = nn.Dropout(mlp_dropout_rate)
-        self.mlp_activation = self._get_activation_func(mlp_activation)
+        self.mlp_activation = get_activation_func(mlp_activation)
         self.classify1 = nn.Linear(hidden_dim + 1, hidden_dim)
         if self.mlp_num_hid_layers == 2:
             self.classify2 = nn.Linear(hidden_dim, hidden_dim)
         elif self.mlp_num_hid_layers != 1:
             raise ValueError("mlp_num_hid_layers must be 1 or 2")
         self.classify3 = nn.Linear(hidden_dim, n_classes)
-    
-    def _get_activation_func(self, activation: Optional[str] = None):
-        """Get activation function based on activation name."""
-        if activation is None or activation in ["relu", "ReLU", "RELU"]:
-            return F.relu
-        elif activation in ["elu", "ELU"]:
-            return F.elu
-        elif activation in ["leaky_relu", "LeakyReLU"]:
-            return F.leaky_relu
-        elif activation in ["sigmoid", "Sigmoid"]:
-            return F.sigmoid
-        elif activation in ["softplus", "Softplus"]:
-            return F.softplus
-        elif activation in ["silu", "SiLU"]:
-            return F.silu
-        else:
-            return F.relu
     
     def forward(
         self,
@@ -654,30 +620,13 @@ class GEGNN(nn.Layer):
         )
 
         # SLP (Solvation Layer Perceptron) for transforming embeddings with composition
-        self.mlp_activation = self._get_activation_func(mlp_activation)
+        self.mlp_activation = get_activation_func(mlp_activation)
         self.mfp_trans = nn.Linear(hidden_dim + 1, hidden_dim + 1)
         
         # MLP classifier for G^E prediction
         self.classify1 = nn.Linear(hidden_dim + 1, hidden_dim)
         self.classify2 = nn.Linear(hidden_dim, hidden_dim)
         self.classify3 = nn.Linear(hidden_dim, n_classes)
-    
-    def _get_activation_func(self, activation: Optional[str] = None):
-        """Get activation function based on activation name."""
-        if activation is None or activation in ["relu", "ReLU", "RELU"]:
-            return F.relu
-        elif activation in ["elu", "ELU"]:
-            return F.elu
-        elif activation in ["leaky_relu", "LeakyReLU"]:
-            return F.leaky_relu
-        elif activation in ["sigmoid", "Sigmoid"]:
-            return F.sigmoid
-        elif activation in ["softplus", "Softplus"]:
-            return F.softplus
-        elif activation in ["silu", "SiLU"]:
-            return F.silu
-        else:
-            return F.relu
     
     def forward(
         self,
