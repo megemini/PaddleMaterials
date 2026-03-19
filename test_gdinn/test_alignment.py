@@ -511,6 +511,118 @@ def test_mcm_alignment():
 
 
 # ============================================================================
+# Graph Utils 精度对齐测试
+# ============================================================================
+
+def test_mean_nodes_alignment():
+    """测试 mean_nodes 函数精度对齐 (Paddle vs DGL)
+    
+    验证 PaddleMaterials 的 mean_nodes 实现与 DGL 的 dgl.mean_nodes 输出一致
+    """
+    print("\n" + "=" * 80)
+    print("测试 mean_nodes 精度对齐 (Paddle vs DGL)")
+    print("=" * 80)
+    
+    try:
+        from ppmat.models.gdinn.graph_utils import MolecularGraph, batch_graphs, mean_nodes
+        
+        # 测试参数
+        batch_size = 4
+        feat_dim = 64
+        num_nodes_list = [10, 15, 8, 12]  # 每个图的节点数不同
+        
+        # 设置随机种子
+        set_random_seed(42)
+        
+        # 创建 Paddle 图列表
+        paddle_graphs = []
+        for i, num_nodes in enumerate(num_nodes_list):
+            # 创建随机边
+            num_edges = num_nodes * 3
+            src = paddle.randint(0, num_nodes, [num_edges])
+            dst = paddle.randint(0, num_nodes, [num_edges])
+            
+            # 创建随机节点特征
+            node_feat = paddle.randn([num_nodes, feat_dim])
+            
+            # 创建 MolecularGraph
+            g = MolecularGraph(
+                num_nodes=num_nodes,
+                edges=(src, dst),
+                node_feat={'h': node_feat}
+            )
+            paddle_graphs.append(g)
+        
+        # 批处理 Paddle 图
+        paddle_batched = batch_graphs(paddle_graphs)
+        
+        # 计算 Paddle mean_nodes
+        paddle_result = mean_nodes(paddle_batched, 'h')
+        
+        print(f"  Paddle mean_nodes 输出形状: {paddle_result.shape}")
+        
+        # 创建对应的 DGL 图列表
+        dgl_graphs = []
+        for i, num_nodes in enumerate(num_nodes_list):
+            # 使用相同的边
+            src_np = paddle_graphs[i].edges[0].numpy()
+            dst_np = paddle_graphs[i].edges[1].numpy()
+            
+            # 创建 DGL 图
+            g = dgl.graph((src_np, dst_np), num_nodes=num_nodes)
+            
+            # 使用相同的节点特征
+            node_feat_np = paddle_graphs[i].node_feat['h'].numpy()
+            g.ndata['h'] = torch.from_numpy(node_feat_np)
+            
+            dgl_graphs.append(g)
+        
+        # 批处理 DGL 图
+        dgl_batched = dgl.batch(dgl_graphs)
+        
+        # 计算 DGL mean_nodes
+        dgl_result = dgl.mean_nodes(dgl_batched, 'h')
+        
+        print(f"  DGL mean_nodes 输出形状: {dgl_result.shape}")
+        
+        # 转换为 numpy 进行比较
+        paddle_np = paddle_result.numpy()
+        dgl_np = dgl_result.cpu().numpy()
+        
+        # 计算差异
+        diff = np.abs(paddle_np - dgl_np)
+        max_diff = np.max(diff)
+        mean_diff = np.mean(diff)
+        
+        print(f"  最大差异: {max_diff:.10f}")
+        print(f"  平均差异: {mean_diff:.10f}")
+        
+        # 验证形状 (Paddle uses list, DGL uses torch.Size)
+        assert list(paddle_result.shape) == list(dgl_result.shape), \
+            f"形状不匹配: Paddle {paddle_result.shape} vs DGL {dgl_result.shape}"
+        
+        # 验证精度
+        tolerance = 1e-6
+        passed = max_diff < tolerance
+        
+        if passed:
+            print(f"  ✓ 精度对齐 (差异 < {tolerance})")
+            return True, "精度对齐"
+        else:
+            print(f"  ✗ 精度未对齐 (差异 {max_diff:.10f} >= {tolerance})")
+            return False, f"最大差异: {max_diff:.10f}"
+        
+    except ImportError as e:
+        print(f"✗ 导入失败: {e}")
+        return False, f"导入失败: {e}"
+    except Exception as e:
+        print(f"✗ 测试失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False, str(e)
+
+
+# ============================================================================
 # HB 特征测试
 # ============================================================================
 
@@ -655,6 +767,9 @@ def main():
     
     # 运行测试
     results = {}
+    
+    # mean_nodes 精度对齐测试
+    results['mean_nodes_精度对齐'] = test_mean_nodes_alignment()
     
     # HB 特征测试 (验证数据集实现与原始 GDI-NN 一致)
     results['HB_特征计算'] = test_hb_features()

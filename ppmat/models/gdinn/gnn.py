@@ -50,7 +50,7 @@ class SolvGNN(nn.Layer):
         mlp_dropout_rate: Dropout rate for MLP layers (default: 0.0)
         mlp_activation: Activation function for MLP (default: "softplus")
         mpnn_activation: Activation function for MPNN layers (default: "relu")
-        num_step_message_passing: Number of message passing steps (default: 6)
+        num_step_message_passing: Number of message passing steps (default: 1)
         pinn_lambda: Weight for Gibbs-Duhem constraint loss (default: 1.0)
     """
     
@@ -104,7 +104,7 @@ class SolvGNN(nn.Layer):
             batch_data: Dictionary containing:
                 - g1: First molecular graph (solvent 1)
                 - g2: Second molecular graph (solvent 2)
-                - x1: Composition of solvent 1 (mole fraction) [batch_size, 1]
+                - x1: Composition of solvent 1 (mole fraction) aka `solv1_x` [batch_size, 1]
                 - gamma1: Target activity coefficient for solvent 1 [batch_size, 1]
                 - gamma2: Target activity coefficient for solvent 2 [batch_size, 1]
                 - intra_hb1: Intra-molecular hydrogen bonds in solvent 1 [batch_size, 1]
@@ -126,28 +126,16 @@ class SolvGNN(nn.Layer):
         g1 = batch_data['g1']
         g2 = batch_data['g2']
 
+        # Extract node features
+        h1 = g1.node_feat['h'].cast('float32')
+        h2 = g2.node_feat['h'].cast('float32')
+
         # Get composition - ensure 1D [batch_size] like original solv1x
         solv1_x = batch_data['x1']
         while solv1_x.ndim > 1:
             solv1_x = solv1_x.squeeze(-1)  # [batch_size]
         # Enable gradient tracking for Gibbs-Duhem loss (like original: solv1x.requires_grad = True)
         solv1_x.stop_gradient = False
-
-        gamma1_label = batch_data['gamma1']
-        gamma2_label = batch_data['gamma2']
-        # Ensure labels have shape [batch_size, 1]
-        while gamma1_label.ndim > 2:
-            gamma1_label = gamma1_label.squeeze(-1)
-        while gamma2_label.ndim > 2:
-            gamma2_label = gamma2_label.squeeze(-1)
-        if gamma1_label.ndim == 1:
-            gamma1_label = gamma1_label.unsqueeze(-1)
-        if gamma2_label.ndim == 1:
-            gamma2_label = gamma2_label.unsqueeze(-1)
-
-        # Extract node features
-        h1 = g1.node_feat['h'].cast('float32')
-        h2 = g2.node_feat['h'].cast('float32')
 
         # Apply graph convolutions for both solvents (shared weights)
         # Original: F.relu(self.conv1(g1, h1)) — conv has no built-in activation
@@ -211,6 +199,18 @@ class SolvGNN(nn.Layer):
         gamma2_pred = paddle.exp(ln_gamma2_pred)
 
         # Compute prediction loss
+        gamma1_label = batch_data['gamma1']
+        gamma2_label = batch_data['gamma2']
+        # Ensure labels have shape [batch_size, 1]
+        while gamma1_label.ndim > 2:
+            gamma1_label = gamma1_label.squeeze(-1)
+        while gamma2_label.ndim > 2:
+            gamma2_label = gamma2_label.squeeze(-1)
+        if gamma1_label.ndim == 1:
+            gamma1_label = gamma1_label.unsqueeze(-1)
+        if gamma2_label.ndim == 1:
+            gamma2_label = gamma2_label.unsqueeze(-1)
+
         # Labels (gamma1_label, gamma2_label) are already ln(gamma) values from the dataset
         # Original: loss1 = loss_fn1(y[:,0], labgam1)  where labgam1 is ln(gamma)
         pred_loss = 0.5 * F.mse_loss(ln_gamma1_pred.squeeze(-1), gamma1_label.squeeze(-1)) + \
