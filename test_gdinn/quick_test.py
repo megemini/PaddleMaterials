@@ -270,7 +270,7 @@ def test_model_forward():
             print(f"✓ 前向传播成功")
             print(f"  loss_dict keys: {list(output['loss_dict'].keys())}")
             print(f"  pred_dict keys: {list(output['pred_dict'].keys())}")
-            print(f"  total_loss: {output['loss_dict']['total_loss'].item():.4f}")
+            print(f"  loss: {output['loss_dict']['loss'].item():.4f}")
             print(f"  pred_loss: {output['loss_dict'].get('pred_loss', 0).item():.4f}")
             print(f"  gd_loss: {output['loss_dict'].get('gd_loss', 0).item():.4f}")
             print(f"  gamma1 shape: {output['pred_dict']['gamma1'].shape}")
@@ -353,7 +353,7 @@ def test_training_step():
             
             # 前向传播
             output = model(batch)
-            loss = output['loss_dict']['total_loss']
+            loss = output['loss_dict']['loss']
             
             # 反向传播
             loss.backward()
@@ -439,7 +439,7 @@ def test_solvgnn_xmlp_forward():
             print(f"✓ 前向传播成功")
             print(f"  loss_dict keys: {list(output['loss_dict'].keys())}")
             print(f"  pred_dict keys: {list(output['pred_dict'].keys())}")
-            print(f"  total_loss: {output['loss_dict']['total_loss'].item():.4f}")
+            print(f"  loss: {output['loss_dict']['loss'].item():.4f}")
             print(f"  pred_loss: {output['loss_dict'].get('pred_loss', 0).item():.4f}")
             print(f"  gd_loss: {output['loss_dict'].get('gd_loss', 0).item():.4f}")
             print(f"  gamma1 shape: {output['pred_dict']['gamma1'].shape}")
@@ -519,7 +519,7 @@ def test_solvgnn_xmlp_training():
             
             # 前向传播
             output = model(batch)
-            loss = output['loss_dict']['total_loss']
+            loss = output['loss_dict']['loss']
             
             # 反向传播
             loss.backward()
@@ -604,7 +604,7 @@ def test_gegnn_forward():
             print(f"✓ 前向传播成功")
             print(f"  loss_dict keys: {list(output['loss_dict'].keys())}")
             print(f"  pred_dict keys: {list(output['pred_dict'].keys())}")
-            print(f"  total_loss: {output['loss_dict']['total_loss'].item():.4f}")
+            print(f"  loss: {output['loss_dict']['loss'].item():.4f}")
             print(f"  pred_loss: {output['loss_dict'].get('pred_loss', 0).item():.4f}")
             print(f"  gd_loss: {output['loss_dict'].get('gd_loss', 0).item():.4f}")
             print(f"  gamma1 shape: {output['pred_dict']['gamma1'].shape}")
@@ -686,7 +686,7 @@ def test_gegnn_training():
             
             # 前向传播
             output = model(batch)
-            loss = output['loss_dict']['total_loss']
+            loss = output['loss_dict']['loss']
             
             # 反向传播
             loss.backward()

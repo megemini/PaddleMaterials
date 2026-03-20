@@ -123,9 +123,9 @@ class SolvGNN(nn.Layer):
         Returns:
             Dictionary containing:
                 - loss_dict: Dictionary of losses
-                    - pred_loss: Prediction loss (MSE)
-                    - gd_loss: Gibbs-Duhem constraint loss
-                    - total_loss: Combined loss
+                    - loss: Total loss for training (MANDATORY)
+                    - pred_loss: Prediction loss (MSE) for logging
+                    - gd_loss: Gibbs-Duhem constraint loss for logging
                 - pred_dict: Dictionary of predictions
                     - gamma1: Predicted gamma1
                     - gamma2: Predicted gamma2
@@ -221,9 +221,9 @@ class SolvGNN(nn.Layer):
         
         # Build output dictionaries
         loss_dict = {
-            'pred_loss': pred_loss,
-            'gd_loss': gd_loss,
-            'total_loss': total_loss
+            'loss': total_loss,  # Main loss for training (MANDATORY)
+            'pred_loss': pred_loss,  # Prediction loss for logging
+            'gd_loss': gd_loss  # Gibbs-Duhem constraint loss for logging
         }
         
         pred_dict = {
@@ -426,8 +426,9 @@ class SolvGNNxMLP(nn.Layer):
         gd_loss = self.gd_loss_fn(ln_gamma1_pred, ln_gamma2_pred, solv1_x)
 
         total_loss = pred_loss + gd_loss
-        
+
         loss_dict = {
+            'loss': total_loss,  # Main loss for training
             'pred_loss': pred_loss,
             'gd_loss': gd_loss,
             'total_loss': total_loss
@@ -621,8 +622,9 @@ class GEGNN(nn.Layer):
         gd_loss = self.gd_loss_fn(ln_gamma1_pred, ln_gamma2_pred, solv1_x)
 
         total_loss = pred_loss + gd_loss
-        
+
         loss_dict = {
+            'loss': total_loss,  # Main loss for training
             'pred_loss': pred_loss,
             'gd_loss': gd_loss,
             'total_loss': total_loss

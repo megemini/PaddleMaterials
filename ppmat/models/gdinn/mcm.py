@@ -193,9 +193,9 @@ class MCM_MultiMLP(nn.Layer):
         Returns:
             Dictionary containing:
                 - loss_dict: Dictionary of losses
-                    - pred_loss: Prediction loss (MSE)
-                    - gd_loss: Gibbs-Duhem constraint loss
-                    - total_loss: Combined loss
+                    - loss: Total loss for training (MANDATORY)
+                    - pred_loss: Prediction loss (MSE) for logging
+                    - gd_loss: Gibbs-Duhem constraint loss for logging
                 - pred_dict: Dictionary of predictions
                     - gamma1: Predicted gamma1
                     - gamma2: Predicted gamma2
@@ -250,12 +250,12 @@ class MCM_MultiMLP(nn.Layer):
 
         # Total loss
         total_loss = pred_loss + gd_loss
-        
+
         # Build output dictionaries
         loss_dict = {
-            'pred_loss': pred_loss,
-            'gd_loss': gd_loss,
-            'total_loss': total_loss
+            'loss': total_loss,  # Main loss for training (MANDATORY)
+            'pred_loss': pred_loss,  # Prediction loss for logging
+            'gd_loss': gd_loss  # Gibbs-Duhem constraint loss for logging
         }
         
         pred_dict = {
