@@ -31,7 +31,6 @@ from ppmat.datasets.custom_data_type import ConcatNumpyWarper
 from ppmat.datasets.geometric_data_type.batch import Batch
 from ppmat.datasets.geometric_data_type.data import Data
 
-# Import MolecularGraph for GDI-NN
 from ppmat.models.gdinn.graph_utils import batch_graphs, generate_empty_solvsys
 
 

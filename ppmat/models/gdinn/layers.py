@@ -24,7 +24,7 @@ import paddle.nn as nn
 import paddle.nn.functional as F
 from typing import Optional, Union, Callable
 
-from ppmat.models.gdinn.graph_utils import segment_sum, segment_mean
+from ppmat.models.gdinn.graph_utils import segment_sum, segment_mean, segment_max
 
 
 def get_activation(activation: Optional[str] = None, get_nn: bool = False) -> Union[Callable, nn.Layer]:
@@ -189,8 +189,7 @@ class NNConv(nn.Layer):
         elif self.aggregator_type == "mean":
             out = segment_mean(messages, dst, num_nodes)
         elif self.aggregator_type == "max":
-            # For max aggregation, use unsorted_segment_max (requires custom implementation)
-            out = self._segment_max(messages, dst, num_nodes)
+            out = segment_max(messages, dst, num_nodes)
         else:
             # Default to sum aggregation
             out = segment_sum(messages, dst, num_nodes)
@@ -200,22 +199,6 @@ class NNConv(nn.Layer):
             out = out + self.bias
         
         return out
-    
-    def _segment_max(
-        self,
-        data: paddle.Tensor,
-        segment_ids: paddle.Tensor,
-        num_segments: int
-    ) -> paddle.Tensor:
-        """Custom implementation of segment max."""
-        result = paddle.full([num_segments] + list(data.shape[1:]), -float('inf'), dtype=data.dtype)
-        
-        for i in range(num_segments):
-            mask = segment_ids == i
-            if paddle.any(mask):
-                result[i] = paddle.max(data[mask], axis=0)
-        
-        return result
 
 
 class GraphConv(nn.Layer):

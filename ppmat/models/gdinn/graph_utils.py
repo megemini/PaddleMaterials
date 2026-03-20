@@ -272,6 +272,27 @@ def segment_mean(data: paddle.Tensor, segment_ids: paddle.Tensor, num_segments: 
     return result
 
 
+def segment_max(data: paddle.Tensor, segment_ids: paddle.Tensor, num_segments: int) -> paddle.Tensor:
+    """Compute max of data along segments defined by segment_ids.
+    
+    Args:
+        data: Input tensor of shape [N, ...]
+        segment_ids: Segment indices of shape [N], values in [0, num_segments)
+        num_segments: Number of segments
+        
+    Returns:
+        Tensor of shape [num_segments, ...] with max data per segment
+    """
+    result = paddle.full([num_segments] + list(data.shape[1:]), -float('inf'), dtype=data.dtype)
+    
+    for i in range(num_segments):
+        mask = segment_ids == i
+        if paddle.any(mask):
+            result[i] = paddle.max(data[mask], axis=0)
+    
+    return result
+
+
 def generate_empty_solvsys(batch_size: int) -> MolecularGraph:
     """Generate an empty solvent system graph for global interaction.
     
