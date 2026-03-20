@@ -1240,10 +1240,10 @@ def test_prediction():
         # 显示前5个预测结果
         print(f"\n前5个预测结果:")
         for i, pred in enumerate(all_predictions[:5]):
-            print(f"  {i+1}. gamma1: pred={pred['gamma1_pred']:.4f}, target={pred['gamma1_target']:.4f}, "
-                  f"error={abs(pred['gamma1_pred'] - pred['gamma1_target']):.4f}")
-            print(f"     gamma2: pred={pred['gamma2_pred']:.4f}, target={pred['gamma2_target']:.4f}, "
-                  f"error={abs(pred['gamma2_pred'] - pred['gamma2_target']):.4f}")
+            print(f"  {i+1}. gamma1: pred={float(pred['gamma1_pred']):.4f}, target={float(pred['gamma1_target']):.4f}, "
+                  f"error={abs(float(pred['gamma1_pred']) - float(pred['gamma1_target'])):.4f}")
+            print(f"     gamma2: pred={float(pred['gamma2_pred']):.4f}, target={float(pred['gamma2_target']):.4f}, "
+                  f"error={abs(float(pred['gamma2_pred']) - float(pred['gamma2_target'])):.4f}")
         
         print("\n✓ 预测测试通过")
         return True
