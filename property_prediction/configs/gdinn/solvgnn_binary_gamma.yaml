@@ -56,18 +56,17 @@ Metric:
 Optimizer:
   __class_name__: "Adam"
   __init_params__:
-    learning_rate: 0.001
     beta1: 0.9
     beta2: 0.999
     epsilon: 1.0e-8
     weight_decay: 0.0
-
-Scheduler:
-  __class_name__: "StepDecay"
-  __init_params__:
-    learning_rate: 0.001
-    step_size: 50
-    gamma: 0.5
+    lr:
+      __class_name__: "StepDecay"
+      __init_params__:
+        learning_rate: 0.001
+        step_size: 50
+        gamma: 0.5
+        by_epoch: true
 
 Dataset:
   train:
