@@ -20,6 +20,9 @@ Global:
   use_fp16: false
   log_interval: 10
   save_interval: 5
+  do_train: true
+  do_eval: true
+  do_test: false
 
 Model:
   __class_name__: "SolvGNN"
@@ -41,6 +44,14 @@ Loss:
     loss_type: "mse"
     gd_loss_type: "mse"
     use_ln_gamma: true
+
+Metric:
+  gamma1:
+    __class_name__: paddle.nn.L1Loss
+    __init_params__: {}
+  gamma2:
+    __class_name__: paddle.nn.L1Loss
+    __init_params__: {}
 
 Optimizer:
   __class_name__: "Adam"
@@ -116,13 +127,30 @@ Dataset:
       use_shared_memory: false
       collate_fn: "BinaryActivityCollator"
 
-Train:
-  epochs: 200
+Trainer:
+  max_epochs: 200
+  seed: 42
+  output_dir: ./output/solvgnn_binary_gamma
+  save_freq: 5
+  log_freq: 10
+  start_eval_epoch: 1
+  eval_freq: 1
+  pretrained_model_path: null
+  pretrained_weight_name: null
+  resume_from_checkpoint: null
+  use_amp: false
+  amp_level: 'O1'
+  eval_with_no_grad: true
+  gradient_accumulation_steps: 1
   clip_grad_norm: 1.0
-  accumulation_steps: 1
-  evaluate_interval: 1
-  save_interval: 5
-  log_interval: 10
+  best_metric_indicator: 'eval_loss'
+  name_for_best_metric: "loss"
+  greater_is_better: false
+  compute_metric_during_train: true
+  metric_strategy_during_eval: 'epoch'
+  use_visualdl: false
+  use_wandb: false
+  use_tensorboard: false
 
 Evaluator:
   __class_name__: "Evaluator"
