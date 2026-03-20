@@ -69,7 +69,6 @@ __all__ = [
     "SmallDensityDataset",
     "OMol25Dataset",
     "BinaryActivityDataset",
-    "BinaryActivityDatasetFromSMILES",
 ]
 
 INFO_CLASS_REGISTRY: Dict[str, type] = {
