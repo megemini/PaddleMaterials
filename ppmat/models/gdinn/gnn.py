@@ -25,8 +25,8 @@ import paddle.nn as nn
 import paddle.nn.functional as F
 from typing import Dict, Optional, Tuple
 
-from ppmat.models.gdinn.layers import GraphConv, MPNNConv, get_activation
-from ppmat.models.gdinn.graph_utils import mean_nodes, generate_empty_solvsys
+from ppmat.models.gdinn.utils.layers import GraphConv, MPNNConv, get_activation
+from ppmat.models.gdinn.utils.graph_utils import mean_nodes, generate_empty_solvsys
 from ppmat.losses.gibbs_duhem_loss import GibbsDuhemLoss
 
 

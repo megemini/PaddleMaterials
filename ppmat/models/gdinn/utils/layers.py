@@ -24,7 +24,7 @@ import paddle.nn as nn
 import paddle.nn.functional as F
 from typing import Optional, Union, Callable
 
-from ppmat.models.gdinn.graph_utils import segment_sum, segment_mean, segment_max
+from ppmat.models.gdinn.utils.graph_utils import segment_sum, segment_mean, segment_max
 
 
 def get_activation(activation: Optional[str] = None, get_nn: bool = False) -> Union[Callable, nn.Layer]:

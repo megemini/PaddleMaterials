@@ -32,7 +32,7 @@ from typing import Dict, Optional, List
 import paddle.nn.layer as L
 
 from ppmat.losses.gibbs_duhem_loss import GibbsDuhemLoss
-from ppmat.models.gdinn.layers import get_activation
+from ppmat.models.gdinn.utils.layers import get_activation
 
 
 class MLPModule(nn.Layer):

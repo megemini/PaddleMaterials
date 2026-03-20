@@ -7,7 +7,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from rdkit import Chem
-from ppmat.models.gdinn.molecular_graph import CanonicalAtomFeaturizer
+from ppmat.models.gdinn.utils.molecular_graph import CanonicalAtomFeaturizer
 
 # 测试CO分子
 smiles = "CO"

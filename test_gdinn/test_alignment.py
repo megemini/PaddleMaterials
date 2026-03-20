@@ -524,7 +524,7 @@ def test_mean_nodes_alignment():
     print("=" * 80)
     
     try:
-        from ppmat.models.gdinn.graph_utils import MolecularGraph, batch_graphs, mean_nodes
+        from ppmat.models.gdinn.utils.graph_utils import MolecularGraph, batch_graphs, mean_nodes
         
         # 测试参数
         batch_size = 4

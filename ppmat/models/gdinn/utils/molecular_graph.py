@@ -29,7 +29,7 @@ from rdkit.Chem import AllChem
 import paddle
 import numpy as np
 
-from ppmat.models.gdinn.graph_utils import MolecularGraph
+from ppmat.models.gdinn.utils.graph_utils import MolecularGraph
 
 
 def construct_bigraph_from_mol(

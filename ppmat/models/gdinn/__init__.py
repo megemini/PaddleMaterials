@@ -12,12 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ppmat.models.gdinn.graph_utils import MolecularGraph
-from ppmat.models.gdinn.graph_utils import batch_graphs
-from ppmat.models.gdinn.graph_utils import mean_nodes
+from ppmat.models.gdinn.utils.graph_utils import MolecularGraph
 
 __all__ = [
     "MolecularGraph",
-    "batch_graphs",
-    "mean_nodes",
 ]
