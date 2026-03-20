@@ -29,7 +29,7 @@ from rdkit.Chem import AllChem
 import paddle
 import numpy as np
 
-from ppmat.models.gdinn.utils.graph_utils import MolecularGraph
+import pgl
 
 
 def construct_bigraph_from_mol(
@@ -85,8 +85,8 @@ def mol_to_graph(
     canonical_atom_order: bool = True,
     explicit_hydrogens: bool = False,
     num_virtual_nodes: int = 0
-) -> MolecularGraph:
-    """Convert RDKit molecule to MolecularGraph using a custom graph constructor.
+) -> pgl.Graph:
+    """Convert RDKit molecule to pgl.Graph using a custom graph constructor.
 
     This is a generic function that can create different types of molecular graphs
     by using different graph construction functions.
@@ -118,8 +118,8 @@ def mol_to_graph(
 
     Returns
     -------
-    MolecularGraph
-        MolecularGraph for the molecule
+    pgl.Graph
+        pgl.Graph for the molecule
     """
     if mol is None:
         raise ValueError("Input molecule is None")
@@ -192,11 +192,13 @@ def mol_to_graph(
             virtual_feat[:, -1] = 1
             edge_feat[feat_name] = paddle.concat([real_feat, virtual_feat], axis=0)
 
-    # Create MolecularGraph
+    # Create pgl.Graph
     num_nodes = mol.GetNumAtoms() + num_virtual_nodes
-    graph = MolecularGraph(
+    # Convert edges to list of tuples for pgl.Graph
+    edges = list(zip(src.tolist(), dst.tolist()))
+    graph = pgl.Graph(
         num_nodes=num_nodes,
-        edges=(src, dst),
+        edges=edges,
         node_feat=node_feat,
         edge_feat=edge_feat
     )
@@ -212,8 +214,8 @@ def mol_to_bigraph(
     canonical_atom_order: bool = True,
     explicit_hydrogens: bool = False,
     num_virtual_nodes: int = 0
-) -> MolecularGraph:
-    """Convert RDKit molecule to bidirectional MolecularGraph.
+) -> pgl.Graph:
+    """Convert RDKit molecule to bidirectional pgl.Graph.
 
     This function replaces DGL's mol_to_bigraph for PaddlePaddle.
 
@@ -245,8 +247,8 @@ def mol_to_bigraph(
 
     Returns
     -------
-    MolecularGraph or None
-        Bi-directed MolecularGraph for the molecule if :attr:`mol` is valid and None otherwise.
+    pgl.Graph or None
+        Bi-directed pgl.Graph for the molecule if :attr:`mol` is valid and None otherwise.
     """
     return mol_to_graph(
         mol,
@@ -267,8 +269,8 @@ def smiles_to_bigraph(
     canonical_atom_order: bool = True,
     explicit_hydrogens: bool = False,
     num_virtual_nodes: int = 0
-) -> MolecularGraph:
-    """Convert a SMILES into a bi-directed DGLGraph and featurize for it.
+) -> pgl.Graph:
+    """Convert a SMILES into a bi-directed pgl.Graph and featurize for it.
 
     Parameters
     ----------
@@ -298,8 +300,8 @@ def smiles_to_bigraph(
 
     Returns
     -------
-    DGLGraph or None
-        Bi-directed DGLGraph for the molecule if :attr:`smiles` is valid and None otherwise.
+    pgl.Graph or None
+        Bi-directed pgl.Graph for the molecule if :attr:`smiles` is valid and None otherwise.
     """
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:

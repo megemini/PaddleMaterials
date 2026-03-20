@@ -40,7 +40,7 @@ import paddle
 import numpy as np
 from paddle.io import Dataset
 
-from ppmat.models.gdinn.utils.graph_utils import MolecularGraph
+import pgl
 from ppmat.datasets.build_molecule import BuildMolecule
 from ppmat.models.gdinn.utils.molecular_graph import mol_to_bigraph, smiles_to_bigraph
 from ppmat.models.gdinn.utils.atom_feat_encoding import CanonicalAtomFeaturizer
@@ -268,14 +268,14 @@ class BinaryActivityDataset(Dataset):
 
         print(f"Generated data for {len(self.solvent_data)} solvents")
 
-    def _get_molecular_graph(self, smiles: str) -> MolecularGraph:
+    def _get_molecular_graph(self, smiles: str) -> pgl.Graph:
         """Get molecular graph for a SMILES string.
 
         Args:
             smiles: SMILES string
 
         Returns:
-            MolecularGraph object
+            pgl.Graph object
         """
         if self.preload_graphs and smiles in self.graph_cache:
             return self.graph_cache[smiles]

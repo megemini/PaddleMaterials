@@ -31,7 +31,8 @@ from ppmat.datasets.custom_data_type import ConcatNumpyWarper
 from ppmat.datasets.geometric_data_type.batch import Batch
 from ppmat.datasets.geometric_data_type.data import Data
 
-from ppmat.models.gdinn.utils.graph_utils import batch_graphs, generate_empty_solvsys
+from ppmat.models.gdinn.utils.graph_utils import generate_empty_solvsys
+import pgl
 
 
 class DefaultCollator(object):
@@ -329,8 +330,8 @@ class BinaryActivityCollator:
         # Batch molecular graphs
         g1_list = [sample['g1'] for sample in batch]
         g2_list = [sample['g2'] for sample in batch]
-        g1 = batch_graphs(g1_list)
-        g2 = batch_graphs(g2_list)
+        g1 = pgl.Graph.batch(g1_list)
+        g2 = pgl.Graph.batch(g2_list)
         
         # Stack numerical tensors
         x1 = paddle.stack([paddle.to_tensor(sample['x1']) for sample in batch], axis=0)

@@ -147,26 +147,20 @@ class NNConv(nn.Layer):
         """Forward pass.
         
         Args:
-            graph: MolecularGraph or pgl.Graph object
+            graph: pgl.Graph object
             feat: Node features of shape [num_nodes, in_feats]
             edge_feat: Edge features of shape [num_edges, edge_feat_dim]
             
         Returns:
             Updated node features of shape [num_nodes, out_feats]
         """
-        # Get edge information
-        if hasattr(graph, 'edges'):
-            # MolecularGraph: edges is a tuple (src, dst)
-            src, dst = graph.edges
-            num_nodes = graph.num_nodes
-            num_edges = len(src)
-        else:
-            # pgl.Graph: edges is a tensor of shape [num_edges, 2]
-            edge_tensor = graph.edges
-            src = edge_tensor[:, 0]
-            dst = edge_tensor[:, 1]
-            num_nodes = graph.num_nodes
-            num_edges = len(src)
+        # Get edge information from pgl.Graph
+        # pgl.Graph.edges is a tensor of shape [num_edges, 2]
+        edge_tensor = graph.edges
+        src = edge_tensor[:, 0]
+        dst = edge_tensor[:, 1]
+        num_nodes = graph.num_nodes
+        num_edges = len(src)
         
         # Transform edge features to edge weights
         # edge_func(e_ij) returns [num_edges, in_feats * out_feats]
@@ -245,23 +239,18 @@ class GraphConv(nn.Layer):
         """Forward pass.
         
         Args:
-            graph: MolecularGraph or pgl.Graph object
+            graph: pgl.Graph object
             feat: Node features of shape [num_nodes, in_feats]
             
         Returns:
             Updated node features of shape [num_nodes, out_feats]
         """
-        # Get edge information
-        if hasattr(graph, 'edges'):
-            # MolecularGraph: edges is a tuple (src, dst)
-            src, dst = graph.edges
-            num_nodes = graph.num_nodes
-        else:
-            # pgl.Graph: edges is a tensor of shape [num_edges, 2]
-            edge_tensor = graph.edges
-            src = edge_tensor[:, 0]
-            dst = edge_tensor[:, 1]
-            num_nodes = graph.num_nodes
+        # Get edge information from pgl.Graph
+        # pgl.Graph.edges is a tensor of shape [num_edges, 2]
+        edge_tensor = graph.edges
+        src = edge_tensor[:, 0]
+        dst = edge_tensor[:, 1]
+        num_nodes = graph.num_nodes
         
         # Transform node features
         feat = feat @ self.weight
@@ -269,10 +258,7 @@ class GraphConv(nn.Layer):
         # Message passing
         if self.norm:
             # Symmetric normalization: D^(-1/2) * A * D^(-1/2)
-            if hasattr(graph, 'in_degrees'):
-                deg = graph.in_degrees().cast('float32')
-            else:
-                deg = graph.indegree().cast('float32')
+            deg = graph.indegree().cast('float32')
             norm_coeff = paddle.pow(deg, -0.5)
             norm_coeff = paddle.where(
                 paddle.isinf(norm_coeff),
@@ -391,7 +377,7 @@ class MPNNConv(nn.Layer):
            b. GRU update with hidden state
 
         Args:
-            graph: MolecularGraph or pgl.Graph object
+            graph: pgl.Graph object
             node_feats: Node features of shape [num_nodes, node_in_feats]
             edge_feats: Edge features of shape [num_edges, edge_in_feats]
 

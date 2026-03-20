@@ -334,9 +334,11 @@ def test_gnn_alignment():
 def paddle_graph_to_dgl(paddle_g):
     """将 Paddle batched 图转换为 DGL batched 图"""
     # 获取节点和边信息
-    src = paddle_g.edges[0].numpy() if hasattr(paddle_g.edges[0], 'numpy') else paddle_g.edges[0]
-    dst = paddle_g.edges[1].numpy() if hasattr(paddle_g.edges[1], 'numpy') else paddle_g.edges[1]
-    num_nodes = paddle_g.num_nodes
+    # pgl.Graph.edges is a tensor of shape [num_edges, 2]
+    edges_tensor = paddle_g.edges
+    src = edges_tensor[:, 0].numpy()
+    dst = edges_tensor[:, 1].numpy()
+    num_nodes = int(paddle_g.num_nodes)
     
     # 获取节点特征 (Paddle 使用 node_feat 字典)
     if paddle_g.node_feat and 'h' in paddle_g.node_feat:
@@ -352,10 +354,17 @@ def paddle_graph_to_dgl(paddle_g):
     g.ndata['h'] = torch.from_numpy(node_feats).cuda()
     
     # 设置 batch 信息 (如果存在)
-    if hasattr(paddle_g, 'batch_num_nodes') and paddle_g.batch_num_nodes is not None:
-        g.set_batch_num_nodes(paddle_g.batch_num_nodes.numpy() if hasattr(paddle_g.batch_num_nodes, 'numpy') else paddle_g.batch_num_nodes)
-    if hasattr(paddle_g, 'batch_num_edges') and paddle_g.batch_num_edges is not None:
-        g.set_batch_num_edges(paddle_g.batch_num_edges.numpy() if hasattr(paddle_g.batch_num_edges, 'numpy') else paddle_g.batch_num_edges)
+    # pgl uses graph_node_id to identify which graph each node belongs to
+    # Count nodes per graph
+    graph_node_id = paddle_g.graph_node_id.numpy()
+    num_graphs = int(paddle_g.num_graph)
+    batch_num_nodes = np.array([np.sum(graph_node_id == i) for i in range(num_graphs)])
+    g.set_batch_num_nodes(batch_num_nodes)
+    
+    # Count edges per graph
+    graph_edge_id = paddle_g.graph_edge_id.numpy()
+    batch_num_edges = np.array([np.sum(graph_edge_id == i) for i in range(num_graphs)])
+    g.set_batch_num_edges(batch_num_edges)
     
     return g
 
@@ -524,7 +533,8 @@ def test_mean_nodes_alignment():
     print("=" * 80)
     
     try:
-        from ppmat.models.gdinn.utils.graph_utils import MolecularGraph, batch_graphs, mean_nodes
+        import pgl
+        from ppmat.models.gdinn.utils.graph_utils import mean_nodes
         
         # 测试参数
         batch_size = 4
@@ -545,16 +555,17 @@ def test_mean_nodes_alignment():
             # 创建随机节点特征
             node_feat = paddle.randn([num_nodes, feat_dim])
             
-            # 创建 MolecularGraph
-            g = MolecularGraph(
+            # 创建 pgl.Graph
+            edges = list(zip(src.tolist(), dst.tolist()))
+            g = pgl.Graph(
                 num_nodes=num_nodes,
-                edges=(src, dst),
+                edges=edges,
                 node_feat={'h': node_feat}
             )
             paddle_graphs.append(g)
         
         # 批处理 Paddle 图
-        paddle_batched = batch_graphs(paddle_graphs)
+        paddle_batched = pgl.Graph.batch(paddle_graphs)
         
         # 计算 Paddle mean_nodes
         paddle_result = mean_nodes(paddle_batched, 'h')
@@ -565,8 +576,10 @@ def test_mean_nodes_alignment():
         dgl_graphs = []
         for i, num_nodes in enumerate(num_nodes_list):
             # 使用相同的边
-            src_np = paddle_graphs[i].edges[0].numpy()
-            dst_np = paddle_graphs[i].edges[1].numpy()
+            # pgl.Graph.edges is a tensor of shape [num_edges, 2]
+            edges_tensor = paddle_graphs[i].edges
+            src_np = edges_tensor[:, 0].numpy()
+            dst_np = edges_tensor[:, 1].numpy()
             
             # 创建 DGL 图
             g = dgl.graph((src_np, dst_np), num_nodes=num_nodes)
