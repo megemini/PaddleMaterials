@@ -61,7 +61,7 @@ Optimizer:
     epsilon: 1.0e-8
     weight_decay: 0.0
     lr:
-      __class_name__: "StepDecay"
+      __class_name__: "Step"
       __init_params__:
         learning_rate: 0.001
         step_size: 50
