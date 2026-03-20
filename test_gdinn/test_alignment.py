@@ -705,9 +705,9 @@ def test_hb_features():
         expected_inter_hb = min(hba1, hbd2) + min(hbd1, hba2)
         
         # 获取实际值
-        actual_intra_hb1 = float(sample['intra_hb1'].flatten()[0])
-        actual_intra_hb2 = float(sample['intra_hb2'].flatten()[0])
-        actual_inter_hb = float(sample['inter_hb'].flatten()[0])
+        actual_intra_hb1 = sample['intra_hb1']
+        actual_intra_hb2 = sample['intra_hb2']
+        actual_inter_hb = sample['inter_hb']
         
         print(f"\n溶剂 1: {solv1_id}")
         print(f"  SMILES: {smiles1}")

@@ -1219,10 +1219,10 @@ def test_prediction():
                 
                 for i in range(len(gamma1_pred)):
                     all_predictions.append({
-                        'gamma1_pred': float(gamma1_pred[i][0]),
-                        'gamma2_pred': float(gamma2_pred[i][0]),
-                        'gamma1_target': float(gamma1_target[i][0]),
-                        'gamma2_target': float(gamma2_target[i][0])
+                        'gamma1_pred': gamma1_pred[i],
+                        'gamma2_pred': gamma2_pred[i],
+                        'gamma1_target': gamma1_target[i],
+                        'gamma2_target': gamma2_target[i]
                     })
         
         print(f"✓ 预测完成")

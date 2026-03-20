@@ -139,11 +139,8 @@ class SolvGNN(nn.Layer):
         h1 = g1.node_feat['h'].cast('float32')
         h2 = g2.node_feat['h'].cast('float32')
 
-        # Get composition - ensure 1D [batch_size] like original solv1x
+        # Get composition
         solv1_x = batch_data['x1']
-        while solv1_x.ndim > 1:
-            solv1_x = solv1_x.squeeze(-1)  # [batch_size]
-        # Enable gradient tracking for Gibbs-Duhem loss (like original: solv1x.requires_grad = True)
         solv1_x.stop_gradient = False
 
         # Apply graph convolutions for both solvents (shared weights)
@@ -355,8 +352,6 @@ class SolvGNNxMLP(nn.Layer):
 
         # Get composition
         solv1_x = batch_data['x1']
-        while solv1_x.ndim > 1:
-            solv1_x = solv1_x.squeeze(-1)
         solv1_x.stop_gradient = False
 
         # Extract node features
@@ -528,8 +523,6 @@ class GEGNN(nn.Layer):
 
         # Get composition
         solv1_x = batch_data['x1']
-        while solv1_x.ndim > 1:
-            solv1_x = solv1_x.squeeze(-1)
         solv1_x.stop_gradient = False
 
         # Extract node features

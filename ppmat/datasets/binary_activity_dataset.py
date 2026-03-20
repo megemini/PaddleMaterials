@@ -33,7 +33,7 @@ Reference: GDI-NN (https://git.rwth-aachen.de/avt-svt/public/GDI-NN)
 
 import os
 import csv
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Callable
 from pathlib import Path
 
 import paddle
@@ -45,6 +45,7 @@ from ppmat.datasets.build_molecule import BuildMolecule
 from ppmat.models.gdinn.utils.molecular_graph import mol_to_bigraph, smiles_to_bigraph
 from ppmat.models.gdinn.utils.atom_feat_encoding import CanonicalAtomFeaturizer
 
+from rdkit.Chem import rdMolDescriptors
 
 class BinaryActivityDataset(Dataset):
     """Binary activity coefficient dataset in GDI-NN format.
@@ -61,19 +62,11 @@ class BinaryActivityDataset(Dataset):
         solvent_name, solvent_id, smiles_can
         "1,1,1-TRICHLOROETHANE", solvent_1, CC(Cl)(Cl)Cl
 
-    Note: The dataset contains ln_gamma values (natural log of activity coefficients).
-        These values are kept as-is (ln_gamma), consistent with GDI-NN training format.
-
-    Note: Hydrogen bond features are always computed (matching GDI-NN behavior):
-        - intra_hb1: min(HBA, HBD) for solvent 1
-        - intra_hb2: min(HBA, HBD) for solvent 2
-        - inter_hb: min(HBA1, HBD2) + min(HBD1, HBA2)
-
     Args:
         data_path: Path to CSV file containing binary mixture data (GDI-NN format)
         solvent_list_path: Path to file containing list of solvents
             Format: solvent_name, solvent_id, smiles_can
-        graph_converter: Function to convert molecules to graphs (default: mol_to_bigraph)
+        graph_converter: Function to convert molecules to graphs like mol_to_bigraph (default:None)
         add_self_loop: Whether to add self-loops to graphs (default: True)
         preload_graphs: Whether to preload all graphs into memory (default: False)
     """
@@ -82,7 +75,7 @@ class BinaryActivityDataset(Dataset):
         self,
         data_path: str,
         solvent_list_path: Optional[str] = None,
-        graph_converter: Optional[callable] = None,
+        graph_converter: Optional[Callable] = None,
         add_self_loop: bool = True,
         preload_graphs: bool = False
     ):
@@ -92,7 +85,7 @@ class BinaryActivityDataset(Dataset):
             data_path: Path to CSV file containing binary mixture data (GDI-NN format)
             solvent_list_path: Path to file containing list of solvents
                 Format: solvent_name, solvent_id, smiles_can
-            graph_converter: Function to convert molecules to graphs (default: mol_to_bigraph)
+            graph_converter: Function to convert molecules to graphs like mol_to_bigraph (default: None)
             add_self_loop: Whether to add self-loops to graphs (default: True)
             preload_graphs: Whether to preload all graphs into memory (default: False)
         """
@@ -235,10 +228,6 @@ class BinaryActivityDataset(Dataset):
         This matches the original GDI-NN implementation in generate_dataset_for_training.py.
         Each solvent_id maps to [graph, hba, hbd, intra_hb].
         """
-        from rdkit.Chem import rdMolDescriptors
-
-        print("Generating all solvent data (graph, HBA, HBD, intra_hb)...")
-
         for solvent_id, smiles in self.solvent_smiles.items():
             if solvent_id in self.solvent_data:
                 continue
@@ -303,11 +292,9 @@ class BinaryActivityDataset(Dataset):
         Returns:
             SMILES string
         """
-        # First try to get from solvent_list
         if solvent_id in self.solvent_smiles:
             return self.solvent_smiles[solvent_id]
 
-        # Fallback to data if available
         for row in self.data:
             if row.get('solv1') == solvent_id:
                 return row.get('solv1_smiles', '')
@@ -354,8 +341,8 @@ class BinaryActivityDataset(Dataset):
                 - g2: Molecular graph for solvent 2
                 - x1: Composition of solvent 1 (mole fraction, solv1_x)
                 - x2: Composition of solvent 2 (mole fraction, solv2_x)
-                - gamma1: ln(activity coefficient) for solvent 1 (ln_gamma, kept as-is)
-                - gamma2: ln(activity coefficient) for solvent 2 (ln_gamma, kept as-is)
+                - gamma1: ln(activity coefficient) for solvent 1
+                - gamma2: ln(activity coefficient) for solvent 2
                 - intra_hb1: Intra-molecular hydrogen bonding capacity for solvent 1
                 - intra_hb2: Intra-molecular hydrogen bonding capacity for solvent 2
                 - inter_hb: Inter-molecular hydrogen bonding capacity
@@ -363,8 +350,6 @@ class BinaryActivityDataset(Dataset):
                 - solv2_id: Solvent 2 ID
                 - solv1_x: Composition of solvent 1 (same as x1, for GDI-NN compatibility)
         """
-        from rdkit.Chem import rdMolDescriptors
-
         row = self.data[idx]
 
         # Get solvent IDs
@@ -380,34 +365,27 @@ class BinaryActivityDataset(Dataset):
         x1 = self._parse_value(row['solv1_x'])
         x2 = self._parse_value(row['solv2_x'])
 
-        # Parse ln_gamma values (GDI-NN stores ln_gamma directly)
-        # Note: The data contains ln(gamma) values, NOT gamma values.
-        # GDI-NN model predicts ln(gamma) directly, so we keep them as-is.
-        ln_gamma1 = self._parse_value(row['solv1_gamma'])
-        ln_gamma2 = self._parse_value(row['solv2_gamma'])
-
-        # Use ln_gamma directly (consistent with GDI-NN training)
-        gamma1 = ln_gamma1
-        gamma2 = ln_gamma2
+        gamma1 = self._parse_value(row['solv1_gamma'])
+        gamma2 = self._parse_value(row['solv2_gamma'])
 
         # Build sample dictionary (consistent with GDI-NN format)
         # solvent_data format: [graph, hba, hbd, intra_hb]
         sample = {
             'g1': solv1[0],  # graph
             'g2': solv2[0],  # graph
-            'x1': np.array([[x1]], dtype=np.float32),
-            'x2': np.array([[x2]], dtype=np.float32),
-            'gamma1': np.array([[gamma1]], dtype=np.float32),
-            'gamma2': np.array([[gamma2]], dtype=np.float32),
+            'x1': x1,
+            'x2': x2,
+            'gamma1': gamma1,
+            'gamma2': gamma2,
             'solv1_id': solv1_id,
             'solv2_id': solv2_id,
-            'solv1_x': np.array([[x1]], dtype=np.float32),  # GDI-NN uses 'solv1_x' key
+            'solv1_x': x1,  # GDI-NN uses 'solv1_x' key
             # Hydrogen bond features (computed from cached HBA/HBD values)
             # intra_hb = min(HBA, HBD)
-            'intra_hb1': np.array([[solv1[3]]], dtype=np.float32),  # min(hba, hbd)
-            'intra_hb2': np.array([[solv2[3]]], dtype=np.float32),  # min(hba, hbd)
+            'intra_hb1': solv1[3],  # min(hba, hbd)
+            'intra_hb2': solv2[3],  # min(hba, hbd)
             # inter_hb = min(HBA1, HBD2) + min(HBD1, HBA2)
-            'inter_hb': np.array([[min(solv1[1], solv2[2]) + min(solv1[2], solv2[1])]], dtype=np.float32),
+            'inter_hb': min(solv1[1], solv2[2]) + min(solv1[2], solv2[1]),
         }
 
         return sample
@@ -424,19 +402,14 @@ class BinaryActivityDataset(Dataset):
         Returns:
             List containing [graph, hba, hbd, intra_hb]
         """
-        from rdkit.Chem import rdMolDescriptors
-
-        # Return from cache if available
         if solvent_id in self.solvent_data:
             return self.solvent_data[solvent_id]
 
-        # Compute on-the-fly if not cached
         smiles = self._get_smiles(solvent_id)
         mol = self.build_molecule(smiles)
         if mol is None:
             raise ValueError(f"Invalid SMILES for solvent {solvent_id}: {smiles}")
 
-        # Get or create graph
         graph = self._get_molecular_graph(smiles)
 
         # Compute hydrogen bond features

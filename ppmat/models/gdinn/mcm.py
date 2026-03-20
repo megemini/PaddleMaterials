@@ -204,8 +204,6 @@ class MCM_MultiMLP(nn.Layer):
         """
         # Get composition
         solv1_x = batch_data['x1']
-        while solv1_x.ndim > 1:
-            solv1_x = solv1_x.squeeze(-1)
         solv1_x.stop_gradient = False
         
         # Get solvent and solute IDs
